@@ -1,45 +1,81 @@
 # fishdraw
 
-*procedurally generated fish drawings. [demo](https://fishdraw.glitch.me/)*
+Procedurally generated fish drawings, with a TypeScript drawing engine, a Bun CLI, and a live [DialKit](https://github.com/joshpuckett/dialkit) editor. Based on [Lingdong Huang’s fishdraw](https://github.com/LingDong-/fishdraw).
 
 ![](samples/000020.svg)
 
-- generates all sorts of weird fishes
-- outputs polylines (supported format svg, json, csv, etc.)
-- full procedural generation, single file no dependencies
-- plotter-centric
-- export drawing animation:
+## Requirements
 
-![](samples/animated.svg)
+[Bun](https://bun.com/) 1.3 or newer. This project uses Bun for installation, development, builds, and tests. Node.js is not required.
 
-
-
-## usage
-
-basic
-
-```
-node fishdraw.js > output.svg
+```sh
+bun install
+bun run dev
 ```
 
-specify seed (from a string), speed of drawing and output format:
+Open the address printed in the terminal (by default `http://127.0.0.1:3000`). Set `PORT` or `HOST` to change the server address.
 
+## Live editor
+
+Use the native DialKit panel to enter a seed and click Draw, or click Random. DialKit controls adjust its body, scales, pattern, fins, tail, eyes, jaw, teeth, and barbels. Reset restores that seed’s starting parameters. A new seed starts with its own parameters.
+
+Download SVG, animated SVG (SMIL), JSON, CSV, or PostScript. The Export folder contains the format, animation speed, and Download action. Generation runs locally in your browser; drawings are not uploaded.
+
+The editor uses React, DialKit, and Motion. The drawing engine itself has no runtime dependencies.
+
+## CLI
+
+```sh
+bun run generate > output.svg
+bun run generate --seed "Biggus fishus" --format smil --speed 2 > animated.svg
+bun run generate --seed "Salmo salar" --format json > fish.json
+bun cli.ts --help
 ```
-node fishdraw.js --seed "Biggus fishus" --format smil --speed 2 > output.svg
+
+- `--seed`: a string used to generate the fish and its caption. If omitted, a pseudo-Latin name is generated.
+- `--format`: `svg` (default), `smil`, `json`, `csv`, or `ps`.
+- `--speed`: a positive multiplier for SMIL drawing speed; `2` draws twice as fast.
+
+Invalid arguments produce an error on stderr and a nonzero exit status.
+
+## TypeScript library
+
+```ts
+import { generate, main, draw_svg, type Drawing } from './fishdraw.ts';
+
+const drawing: Drawing = main('Biggus fishus');
+await Bun.write('fish.svg', draw_svg(drawing));
+
+const custom = generate('Biggus fishus', {
+  body_height: 120,
+  tail_length: 100,
+});
+console.log(custom.params, custom.polylines);
 ```
 
-- the seed string is used as the name of the fish (printed in the drawing). If unspecified, a random pseudo-Latin name will be auto generated.
-- the speed number is used to control the speed of drawing animation. Larger the number is, faster it draws. This option works only with format `smil`.
-- format options: `svg` (regular svg), `smil` (animated svg), `csv` (each polyline on a comma-separated line) and `json`.
+`parameters_for_seed(seed)` returns reproducible starting parameters. `generate(seed, overrides)` produces a captioned, framed drawing with optional parameter overrides. The same seed and parameters produce the same result across repeated calls.
 
-use as JS library:
+The original lower-level functions remain available as typed ES module exports: `fish`, `generate_params`, `default_params`, `reframe`, `cleanup`, `binomen`, and `str_to_seed`. Renderers include `draw_svg`, `draw_svg_anim`, and `draw_ps`. `reframe` and `cleanup` mutate their input. For reproducible generation, prefer `generate` or `main` over the lower-level functions, which share random state.
 
-```js
-const {fish,generate_params} = require('./fishdraw.js');
-let polylines = fish(generate_params());
-console.log(polylines);
+`fishdraw.js` has been replaced by `fishdraw.ts`; CommonJS consumers should migrate to the ES module imports above. The CLI entry point is now `cli.ts`.
+
+## Build and verify
+
+```sh
+bun run typecheck
+bun test
+bun run build
+bunx --bun playwright install chromium
+bun run test:e2e
+# All checks together (after installing Chromium):
+bun run check
 ```
 
+`bun run build` creates a standalone static editor in `dist/`, suitable for static hosting. `bun run start` runs the Bun server in production mode using the source HTML entry point. DialKit is explicitly enabled in production because the controls are part of the editor.
+
+Tests cover original-output regression fixtures, deterministic seeds, parameter variants and range extremes, finite coordinates, exports, and CLI validation. Browser tests cover desktop and mobile DialKit controls and downloads against the production Bun server.
+
+The migration also fixes existing bugs exposed by TypeScript: leaked `lip1s` state, noise reused across seeds, incorrect short-stroke cleanup coordinates, missing-caption handling, and stray markup / inconsistent coordinates in animated SVG. The regression fixtures account for the cleanup fix; eight seeded drawings otherwise match the original output.
 
 ## gallery
 

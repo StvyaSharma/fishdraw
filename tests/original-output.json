@@ -1,0 +1,42 @@
+[
+  {
+    "seed": "Biggus fishus",
+    "strokes": 487,
+    "sha256": "43c48e3da9d9fc5b2fd2ed6a93cf36064beedf8aa84b1111781b12baf6d3ca09"
+  },
+  {
+    "seed": "Salmo salar",
+    "strokes": 916,
+    "sha256": "e47d0a224eca69006d49d42c1334b7feb440574882cbe7ea469ee45fd4bf4793"
+  },
+  {
+    "seed": "A",
+    "strokes": 735,
+    "sha256": "ab786e7ece1ad38b8a99c482b82f633198437ddb22a755b87f40821e96d242f2"
+  },
+  {
+    "seed": "B",
+    "strokes": 1295,
+    "sha256": "2a3d42ec90c9f0ebfa17b1ff90e595f6377a591824ffb80bcf5ac0b3daca72ea"
+  },
+  {
+    "seed": "C",
+    "strokes": 771,
+    "sha256": "c03d1f610edf81041e69a8347109d1f372dea89735aef2010da618cde0b2b305"
+  },
+  {
+    "seed": "D",
+    "strokes": 621,
+    "sha256": "b9ae3a0b635cd3aef5e8570d316ccc660099b7c90a6b8ee72c2802466bbed875"
+  },
+  {
+    "seed": "E",
+    "strokes": 459,
+    "sha256": "c171d19e1c8e98b383a6b80310d0d6213d5e1bf6c64935898e11d20c769f1831"
+  },
+  {
+    "seed": "F",
+    "strokes": 684,
+    "sha256": "2f0db7d4acda815ac652378db64e5e1bcb8dc38e88637a6917a587889d435704"
+  }
+]
