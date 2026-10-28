@@ -2,6 +2,7 @@ import { useDeferredValue, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DialRoot, useDialKitController, type DialConfig } from 'dialkit';
 import { binomen, generate, parameters_for_seed } from '../fishdraw.ts';
+import { fishInspirations, parameters_for_preset } from '../presets.ts';
 import { isOutputFormat, serialize } from '../formats.ts';
 import { controlConfig, parameterOverrides } from './controls.ts';
 import 'dialkit/styles.css';
@@ -18,9 +19,10 @@ function download(content: string, filename: string, type: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function FishEditor({ seed }: { seed: string }) {
+function FishEditor({ seed, presetId }: { seed: string; presetId: string }) {
+  const baseParams = useMemo(() => parameters_for_preset(seed, presetId), [seed, presetId]);
   const config = useMemo(() => ({
-    ...controlConfig(parameters_for_seed(seed)),
+    ...controlConfig(baseParams),
     reset: { type: 'action' },
     export: {
       _collapsed: true,
@@ -28,7 +30,7 @@ function FishEditor({ seed }: { seed: string }) {
       speed: [1, 0.5, 4, 0.5],
       download: { type: 'action' },
     },
-  } satisfies DialConfig), [seed]);
+  } satisfies DialConfig), [baseParams]);
   const dial = useDialKitController('Anatomy', config, {
     onAction(path) {
       if (path === 'reset') dial.resetValues();
@@ -36,7 +38,7 @@ function FishEditor({ seed }: { seed: string }) {
         const values = dial.getValues();
         const format = values.export.format;
         if (!isOutputFormat(format)) return;
-        const fish = generate(seed, parameterOverrides(values));
+        const fish = generate(seed, { ...baseParams, ...parameterOverrides(values) });
         const extension = format === 'smil' ? 'svg' : format;
         const type = format === 'svg' || format === 'smil' ? 'image/svg+xml' : format === 'json' ? 'application/json' : 'text/plain';
         const filename = seed.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'fish';
@@ -47,13 +49,13 @@ function FishEditor({ seed }: { seed: string }) {
   const values = useDeferredValue(dial.values);
   const result = useMemo(() => {
     try {
-      const fish = generate(seed, parameterOverrides(values));
+      const fish = generate(seed, { ...baseParams, ...parameterOverrides(values) });
       const svg = serialize(fish.polylines, 'svg');
       return { image: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, error: null };
     } catch {
       return { image: '', error: 'Unable to draw this combination. Reset the parameters or try another seed.' };
     }
-  }, [seed, values]);
+  }, [seed, baseParams, values]);
 
   return result.error ? <p role="alert">{result.error}</p> : <img
     src={result.image}
@@ -65,27 +67,30 @@ function FishEditor({ seed }: { seed: string }) {
 }
 
 function App() {
-  const [seed, setSeed] = useState('Biggus fishus');
+  const [specimen, setSpecimen] = useState({ seed: 'Biggus fishus', presetId: 'procedural', revision: 0 });
   const dial = useDialKitController('Fish', {
     seed: { type: 'text', default: 'Biggus fishus' },
+    inspiration: { type: 'select', options: fishInspirations.map(p => ({ value: p.id, label: p.label })), default: 'procedural' },
+    applyInspiration: { type: 'action' },
     draw: { type: 'action' },
     random: { type: 'action' },
   }, {
     onAction(path) {
-      if (path === 'draw') {
-        const next = dial.getValues().seed.trim();
-        if (next) setSeed(next);
+      if (path === 'draw' || path === 'applyInspiration') {
+        const values = dial.getValues();
+        const next = values.seed.trim();
+        if (next) setSpecimen(s => ({ seed: next, presetId: values.inspiration, revision: s.revision + 1 }));
       }
       if (path === 'random') {
         parameters_for_seed(crypto.randomUUID());
         const next = binomen();
         dial.setValue('seed', next);
-        setSeed(next);
+        setSpecimen(s => ({ seed: next, presetId: dial.getValues().inspiration, revision: s.revision + 1 }));
       }
     },
   });
   return <>
-    <FishEditor key={seed} seed={seed} />
+    <FishEditor key={specimen.revision} seed={specimen.seed} presetId={specimen.presetId} />
     <DialRoot productionEnabled versions="menu" />
   </>;
 }

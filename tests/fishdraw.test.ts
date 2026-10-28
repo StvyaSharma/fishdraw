@@ -61,9 +61,10 @@ function edgeControls(edge: 1 | 2): Controls {
   const c = controlConfig(default_params());
   return {
     body: { length: c.body.length[edge], height: c.body.height[edge], curve: c.body.curve[edge], shape: String(edge - 1) },
-    texture: { scales: String(edge === 1 ? 0 : 3), scaleSize: c.texture.scaleSize[edge], pattern: String(edge === 1 ? 0 : 4), patternSize: c.texture.patternSize[edge] },
-    fins: { dorsal: c.fins.dorsal[edge], pectoral: c.fins.pectoral[edge], pelvic: c.fins.pelvic[edge], anal: c.fins.anal[edge], tail: c.fins.tail[edge], tailShape: String(edge === 1 ? 0 : 5) },
-    face: { eye: c.face.eye[edge], jaw: c.face.jaw[edge], mouthOpen: c.face.mouthOpen[edge], teeth: edge === 2, moustache: edge === 2, beard: edge === 2, _collapsed: true },
+    texture: { scales: String(edge === 1 ? 0 : 3), scaleSize: c.texture.scaleSize[edge], pattern: String(edge === 1 ? 0 : 4), patternSize: c.texture.patternSize[edge], ocellus: edge === 2, lateralLine: edge === 1 ? '0' : '2' },
+    fins: { dorsal: c.fins.dorsal[edge], pectoral: c.fins.pectoral[edge], pelvic: c.fins.pelvic[edge], anal: c.fins.anal[edge], tail: c.fins.tail[edge], tailShape: String(edge === 1 ? 0 : 5), arrangement: edge === 1 ? '0' : '5' },
+    anatomy: { _collapsed: true, dorsalFin: edge === 2, pectoralFin: edge === 2, pelvicFin: edge === 2, analFin: edge === 2, dorsalOrigin: c.anatomy.dorsalOrigin[edge], dorsalSpan: c.anatomy.dorsalSpan[edge], analOrigin: c.anatomy.analOrigin[edge], analSpan: c.anatomy.analSpan[edge], finRays: String(edge - 1) },
+    face: { eye: c.face.eye[edge], jaw: c.face.jaw[edge], mouthOpen: c.face.mouthOpen[edge], snoutLength: c.face.snoutLength[edge], snoutHeight: c.face.snoutHeight[edge], barbelsLength: c.face.barbelsLength[edge], chinBarbelsLength: c.face.chinBarbelsLength[edge], mouthPosition: edge === 1 ? '0' : '1', barbelsOrigin: edge === 1 ? '0' : '1', teeth: edge === 2, moustache: edge === 2, beard: edge === 2, _collapsed: true },
   };
 }
 
