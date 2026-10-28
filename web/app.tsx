@@ -1,12 +1,16 @@
 import { useDeferredValue, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DialRoot, useDialKitController, type DialConfig } from 'dialkit';
-import { binomen, generate, parameters_for_seed } from '../fishdraw.ts';
+import { binomen, generate_scene, parameters_for_seed } from '../fishdraw.ts';
 import { fishInspirations, parameters_for_preset } from '../presets.ts';
 import { isOutputFormat, serialize } from '../formats.ts';
 import { controlConfig, parameterOverrides } from './controls.ts';
 import 'dialkit/styles.css';
 import './styles.css';
+import { colorConfig, colorSettings } from './color-controls.ts';
+import { ColorPreview, paintKey, type PaintedImage } from './color-preview.tsx';
+import { draw_colored_svg } from '../color/svg.ts';
+import { createPaintPlan } from '../color/plan.ts';
 
 function download(content: string, filename: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -20,9 +24,12 @@ function download(content: string, filename: string, type: string) {
 }
 
 function FishEditor({ seed, presetId }: { seed: string; presetId: string }) {
+  const [painted, setPainted] = useState<PaintedImage | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const baseParams = useMemo(() => parameters_for_preset(seed, presetId), [seed, presetId]);
   const config = useMemo(() => ({
     ...controlConfig(baseParams),
+    coloring: colorConfig(),
     reset: { type: 'action' },
     export: {
       _collapsed: true,
@@ -32,38 +39,54 @@ function FishEditor({ seed, presetId }: { seed: string; presetId: string }) {
     },
   } satisfies DialConfig), [baseParams]);
   const dial = useDialKitController('Anatomy', config, {
-    onAction(path) {
+    async onAction(path) {
       if (path === 'reset') dial.resetValues();
       if (path === 'export.download') {
         const values = dial.getValues();
         const format = values.export.format;
         if (!isOutputFormat(format)) return;
-        const fish = generate(seed, { ...baseParams, ...parameterOverrides(values) });
-        const extension = format === 'smil' ? 'svg' : format;
-        const type = format === 'svg' || format === 'smil' ? 'image/svg+xml' : format === 'json' ? 'application/json' : 'text/plain';
-        const filename = seed.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'fish';
-        download(serialize(fish.polylines, format, values.export.speed), `${filename}.${extension}`, type);
+        try {
+          const settings = colorSettings(values.coloring);
+          const fish = generate_scene(seed, { ...baseParams, ...parameterOverrides(values) });
+          let content = serialize(fish.polylines, format, values.export.speed);
+          if (format === 'svg' && settings.enabled) {
+            if (settings.medium === 'watercolor') {
+              const key = paintKey(fish, settings);
+              try {
+                const image = painted?.key === key ? painted.image : await (await import('./watercolor.ts')).paintWatercolor(createPaintPlan(fish, settings), () => false);
+                content = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="320"><image width="520" height="320" href="${image}"/></svg>`;
+              } catch {
+                // Match the preview's explicit vector fallback on non-WebGL2 devices.
+                content = draw_colored_svg(fish, settings);
+              }
+            } else content = draw_colored_svg(fish, settings);
+          }
+          const extension = format === 'smil' ? 'svg' : format;
+          const type = format === 'svg' || format === 'smil' ? 'image/svg+xml' : format === 'json' ? 'application/json' : 'text/plain';
+          const filename = seed.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'fish';
+          download(content, `${filename}.${extension}`, type);
+          setExportError(null);
+        } catch (error) {
+          setExportError(error instanceof Error ? error.message : 'Unable to export this fish.');
+        }
       }
     },
   });
   const values = useDeferredValue(dial.values);
+  // Color-only changes must not rerun the seeded anatomy generator.
+  const geometryKey = JSON.stringify(parameterOverrides(values));
   const result = useMemo(() => {
     try {
-      const fish = generate(seed, { ...baseParams, ...parameterOverrides(values) });
-      const svg = serialize(fish.polylines, 'svg');
-      return { image: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, error: null };
+      return { scene: generate_scene(seed, { ...baseParams, ...parameterOverrides(values) }), error: null };
     } catch {
-      return { image: '', error: 'Unable to draw this combination. Reset the parameters or try another seed.' };
+      return { scene: null, error: 'Unable to draw this combination. Reset the parameters or try another seed.' };
     }
-  }, [seed, baseParams, values]);
-
-  return result.error ? <p role="alert">{result.error}</p> : <img
-    src={result.image}
-    alt={`Procedural fish drawing named ${seed}`}
-    width="520"
-    height="320"
-    aria-busy={values !== dial.values}
-  />;
+  }, [seed, baseParams, geometryKey]);
+  if (!result.scene) return <p role="alert">{result.error}</p>;
+  return <>
+    <ColorPreview scene={result.scene} settings={colorSettings(values.coloring)} pending={values !== dial.values} onPaint={setPainted} />
+    {exportError ? <p role="alert">{exportError}</p> : null}
+  </>;
 }
 
 function App() {

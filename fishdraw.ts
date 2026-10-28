@@ -1,3 +1,4 @@
+import type { Anatomy, HeadAnatomy, Region } from './color/anatomy.ts';
 import { resolveTraits, traitById, type FishTraitExtensions } from './traits/index.ts';
 import { bodyFrame, type TraitContext } from './traits/types.ts';
 import { lateralLine, ocellusMask } from './traits/markings.ts';
@@ -1754,7 +1755,7 @@ function barbel(x: number,y: number,n: number,ang: number,dd=3){
   return o0.concat(o1.slice().reverse());
 }
 
-function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y2: number, arg: FishParams): [Polyline, Drawing]{
+function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y2: number, arg: FishParams, capture?: (head: HeadAnatomy) => void): [Polyline, Drawing]{
   let n = 20;
   let curve0: Polyline = [];
   let curve1: Polyline = [];
@@ -1917,6 +1918,7 @@ function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y
   let outlinel: Polyline = [[mask_left,mask_top],[curve0[curve0.length-1][0],mask_top],curve0[curve0.length-1],...curve2,curve1[0],[curve1[0][0],mask_bottom],[mask_left,mask_bottom]];
 
   
+  capture?.({ outline, eye: eye0, gill: curve2, jaw: jc, root: curve2 });
   return [outlinel,[
     ...olines,...inlines,
     ...lip0s,...lip1s,
@@ -1931,7 +1933,9 @@ function deviate(n: number){
 }
 
 
-function fish(arg: FishParams, extensions: FishTraitExtensions = {}){
+function fish(arg: FishParams, extensions: FishTraitExtensions = {}, capture?: (anatomy: Anatomy) => void){
+  let head: HeadAnatomy | undefined;
+  const extraFins: Region[] = [];
   const traits = resolveTraits(extensions);
   const shape = traitById(traits.shapes, arg.body_curve_type);
   const texture = traitById(traits.textures, arg.scale_type);
@@ -2125,20 +2129,24 @@ function fish(arg: FishParams, extensions: FishTraitExtensions = {}){
 
   f4 = clip_multi(f4,c1).false;
 
-  let f5_curve: Polyline, c5: Polyline, f5: Drawing = [];
+  let f5_curve: Polyline = [], c5: Polyline = [], f5: Drawing = [];
   if (arg.finlet_type == 5){
     f5 = ribbonFin(context);
+    if (f5[0]) extraFins.push({ id: 'finlets', outline: f5[0], root: context.body.outline });
     f0 = []; f3 = []; f4 = [];
   }else if (arg.finlet_type == 4){
     const secondStart = Math.min(22, arg.dorsal_end + 1);
     if (arg.has_dorsal) {
       const second = resample(curve0.slice(secondStart, secondStart + 4), 4);
-      if (second.length > 2) f5.push(...fin_a(second, 0.25, 0.2, t => (1 - t * 0.8) * arg.dorsal_length * 0.6)[1]);
+      if (second.length > 2) {
+        const [edge, strokes] = fin_a(second, 0.25, 0.2, t => (1 - t * 0.8) * arg.dorsal_length * 0.6);
+        f5.push(...strokes); extraFins.push({ id: 'finlets', outline: edge, root: second });
+      }
       const upper = resample(curve0.slice(secondStart + 4, -1), 3);
-      if (upper.length > 2) f5.push(...finlet(upper, 9)[1]);
+      if (upper.length > 2) { const [edge, strokes] = finlet(upper, 9); f5.push(...strokes); extraFins.push({ id: 'finlets', outline: edge, root: upper }); }
     }
     const lower = resample(curve1.slice(Math.max(24, arg.anal_end), -1).reverse(), 3);
-    if (arg.has_anal && lower.length > 2) f5.push(...finlet(lower, 9, -1)[1]);
+    if (arg.has_anal && lower.length > 2) { const [edge, strokes] = finlet(lower, 9, -1); f5.push(...strokes); extraFins.push({ id: 'finlets', outline: edge, root: lower }); }
   }else if (arg.finlet_type == 0){
     //pass
   }else if (arg.finlet_type == 1){
@@ -2164,9 +2172,9 @@ function fish(arg: FishParams, extensions: FishTraitExtensions = {}){
   if (!arg.has_anal) f3 = [];
   let cf,fh;
   if (arg.neck_type == 0){
-    ;[cf,fh] = fish_head(50-arg.head_length,150+arg.nose_height,...curve0[6],...curve1[5],arg);
+    ;[cf,fh] = fish_head(50-arg.head_length,150+arg.nose_height,...curve0[6],...curve1[5],arg, value => { head = value; });
   }else{
-    ;[cf,fh] = fish_head(50-arg.head_length,150+arg.nose_height,...curve0[5],...curve1[6],arg);
+    ;[cf,fh] = fish_head(50-arg.head_length,150+arg.nose_height,...curve0[5],...curve1[6],arg, value => { head = value; });
   }
   bd = clip_multi(bd,cf).false;
   
@@ -2197,9 +2205,12 @@ function fish(arg: FishParams, extensions: FishTraitExtensions = {}){
 
   let details: Drawing = [];
   if (marking.render && arg.pattern_type !== 8) details.push(...marking.render(context));
-  details.push(...lateralLine(context));
+  const lateral = lateralLine(context);
+  details.push(...lateral);
+  let eyeSpotMask: Polyline = [];
   if (arg.has_ocellus || arg.pattern_type === 8) {
     const mask = ocellusMask(context);
+    eyeSpotMask = mask;
     bd = clip_multi(bd, mask).false;
     sh = clip_multi(sh, mask).false;
     sh2 = clip_multi(sh2, mask).false;
@@ -2211,6 +2222,22 @@ function fish(arg: FishParams, extensions: FishTraitExtensions = {}){
   details = clip_multi(details, cf).false;
   details = clip_multi(details, c1).false;
 
+  if (capture && head) {
+    if (c5.length && f5.length && arg.finlet_type !== 4 && arg.finlet_type !== 5) extraFins.push({ id: 'finlets', outline: c5, root: f5_curve });
+    const regions: Region[] = [
+      { id: 'caudal', outline: f4.length ? c4 : [], root: [curve0.at(-1)!, curve1.at(-1)!] },
+      { id: 'dorsal', outline: f0.length ? c0 : [], root: f0_curve },
+      { id: 'pelvic', outline: f2.length ? c2 : [], root: f2_curve },
+      { id: 'anal', outline: f3.length ? c3 : [], root: f3_curve },
+      ...extraFins,
+      { id: 'body', outline: context.body.outline, root: [] },
+      { id: 'head', outline: head.outline, root: head.root },
+      { id: 'jaw', outline: head.jaw, root: head.jaw.slice(0, 2) },
+      { id: 'pectoral', outline: f1.length ? c1 : [], root: f1_curve },
+    ];
+    capture({ regions: regions.filter(r => r.outline.length >= 3), top: curve0, bottom: curve1,
+      eye: head.eye, gill: head.gill, ocellus: eyeSpotMask, lateralLine: lateral });
+  }
   return bd.
   concat(f0).
   concat(f1).
@@ -2639,6 +2666,27 @@ export function generate(seed: string, overrides: Partial<FishParams> = {}, exte
   const drawing = fish({ ...params }, extensions);
   return { seed, params, polylines: cleanup(reframe(drawing, 20, seed + '.')) };
 }
+
+/** Semantic anatomy captured in the same random pass as the original strokes.
+ * Regions use SVG canvas coordinates; legacy polylines keep their original coordinates. */
+export function generate_scene(seed: string, overrides: Partial<FishParams> = {}, extensions: FishTraitExtensions = {}) {
+  const params = { ...parameters_for_seed(seed), ...overrides };
+  let anatomy: Anatomy | undefined;
+  const drawing = fish({ ...params }, extensions, value => { anatomy = value; });
+  if (!anatomy) throw new Error('Unable to capture fish anatomy.');
+  const bbox = get_bbox(drawing.flat());
+  const scale = Math.min(460 / bbox.w, 250 / bbox.h);
+  const tx = (460 - bbox.w * scale) / 2 + 30 - bbox.x * scale;
+  const ty = (250 - bbox.h * scale) / 2 + 30 - bbox.y * scale;
+  const line = (points: Polyline): Polyline => points.map(([x, y]) => [x * scale + tx, y * scale + ty]);
+  const transformed: Anatomy = {
+    regions: anatomy.regions.map(region => ({ ...region, outline: line(region.outline), root: line(region.root) })),
+    top: line(anatomy.top), bottom: line(anatomy.bottom), eye: line(anatomy.eye),
+    gill: line(anatomy.gill), ocellus: line(anatomy.ocellus), lateralLine: anatomy.lateralLine.map(line),
+  };
+  return { seed, params, anatomy: transformed, polylines: cleanup(reframe(drawing, 20, seed + '.')) };
+}
+export type FishScene = ReturnType<typeof generate_scene>;
 
 function main(seed?: string): Drawing {
   if (seed === undefined) {

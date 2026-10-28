@@ -31,6 +31,12 @@ Download SVG, animated SVG (SMIL), JSON, CSV, or PostScript. The Export folder c
 
 The editor uses React, DialKit, and Motion. The drawing engine itself has no runtime dependencies.
 
+## Coloring
+
+Open **Coloring** in DialKit to enable regional vector or p5.brush watercolor layers. Choose palettes, procedural/Turing/reaction–diffusion patterns, countershading, pigment interactions, and independent body/head/fin settings. Coloring starts disabled; the original line drawing remains available.
+
+See [the coloration guide](docs/coloration.md) for controls, model boundaries, CLI/API examples, and export behavior, and [the primary-source research](docs/research/fish-coloration.md) for fish biology, pattern formation, and verified p5.brush APIs. Watercolor SVG embeds the rendered raster; other pen-stroke formats retain their original semantics.
+
 ## CLI
 
 ```sh

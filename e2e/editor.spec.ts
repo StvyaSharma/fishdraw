@@ -116,7 +116,7 @@ test('randomise traits picks a new combination and keeps controls, reset, and ex
     await expect(drawing).toHaveAttribute('alt', `Procedural fish drawing named ${seed}`);
     await expect(drawing).not.toHaveAttribute('src', before!);
     await expect(page.getByRole('textbox', { name: 'Seed', exact: true })).toHaveValue(seed);
-    await expect(page.getByText('Explore all traits', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Inspiration Explore all traits', exact: true })).toBeVisible();
     await expectPreset(drawing, 'explorer', seed);
     const baseline = await drawing.getAttribute('src');
     const slider = page.getByRole('slider').first();
