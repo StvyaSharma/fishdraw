@@ -1,3 +1,16 @@
+/** A drawing consists of ordered, two-dimensional pen strokes. */
+export type Point = [number, number];
+export type Polyline = Point[];
+export type Drawing = Polyline[];
+export type FishParams = ReturnType<typeof default_params>;
+type Pattern = (x: number, y: number, t: number) => boolean;
+type ClipResult = { true: Drawing; false: Drawing };
+type Intersection = {
+  t: number; s: number; side: number; other: number | null; xy: Point; jump?: boolean;
+};
+type Vertex = { xy: Point; isects: Intersection[]; isects_map: Record<string, Intersection> };
+type Glyph = { xmin: number; xmax: number; polylines: Drawing };
+
 
 let jsr = 0x5EED;
 let {PI} = Math;
@@ -12,9 +25,9 @@ var PERLIN_YWRAPB = 4; var PERLIN_YWRAP = 1<<PERLIN_YWRAPB;
 var PERLIN_ZWRAPB = 8; var PERLIN_ZWRAP = 1<<PERLIN_ZWRAPB;
 var PERLIN_SIZE = 4095;
 var perlin_octaves = 4;var perlin_amp_falloff = 0.5;
-var scaled_cosine = function(i) {return 0.5*(1.0-Math.cos(i*PI));};
-var perlin;
-let noise = function(x,y,z) {
+var scaled_cosine = function(i: number) {return 0.5*(1.0-Math.cos(i*PI));};
+var perlin: number[] | undefined;
+let noise = function(x: number,y = 0,z = 0) {
   y = y || 0; z = z || 0;
   if (perlin == null) {
     perlin = new Array(PERLIN_SIZE + 1);
@@ -53,19 +66,19 @@ let noise = function(x,y,z) {
   return r;
 };
 
-function dist(x0,y0,x1,y1){
+function dist(x0: number,y0: number,x1: number,y1: number){
   return Math.hypot(x1-x0,y1-y0);
 }
-function lerp(a,b,t){
+function lerp(a: number,b: number,t: number){
   return a * (1-t) + b * t;
 }
-function lerp2d(x0,y0,x1,y1,t){
+function lerp2d(x0: number,y0: number,x1: number,y1: number,t: number): Point{
   return [
     x0*(1-t) + x1*t,
     y0*(1-t) + y1*t,
   ]
 }
-function get_bbox(points){
+function get_bbox(points: Polyline){
   let xmin = Infinity;
   let ymin = Infinity;
   let xmax = -Infinity;
@@ -80,7 +93,7 @@ function get_bbox(points){
   return {x:xmin,y:ymin,w:xmax-xmin,h:ymax-ymin};
 }
 
-function seg_isect(p0x, p0y, p1x, p1y, q0x, q0y, q1x, q1y, is_ray = false) {
+function seg_isect(p0x: number, p0y: number, p1x: number, p1y: number, q0x: number, q0y: number, q1x: number, q1y: number, is_ray = false): Intersection | null{
   let d0x = p1x - p0x;
   let d0y = p1y - p0y;
   let d1x = q1x - q0x;
@@ -96,23 +109,23 @@ function seg_isect(p0x, p0y, p1x, p1y, q0x, q0y, q1x, q1y, is_ray = false) {
   let t = (q0x_p0x * d1y - q0y_p0y * d1x) * vc_vcn;
   let s = (q0x_p0x * d0y - q0y_p0y * d0x) * vc_vcn;
   if (0 <= t && (is_ray || t < 1) && 0 <= s && s < 1) {
-    let ret = {t, s, side: null, other: null, xy: null};
+    let ret: Intersection = {t, s, side: 0, other: null, xy: [0, 0]};
     ret.xy = [p1x * t + p0x * (1 - t), p1y * t + p0y * (1 - t)];
     ret.side = pt_in_pl(p0x, p0y, p1x, p1y, q0x, q0y) < 0 ? 1 : -1;
     return ret;
   }
   return null;
 }
-function pt_in_pl(x, y, x0, y0, x1, y1) {
+function pt_in_pl(x: number,y: number,x0: number,y0: number,x1: number,y1: number){
   let dx = x1 - x0;
   let dy = y1 - y0;
   let e = (x - x0) * dy - (y - y0) * dx;
   return e;
 }
 
-function poly_bridge(poly0,poly1){
+function poly_bridge(poly0: Polyline, poly1: Polyline){
   let dmin = Infinity;
-  let imin = null;
+  let imin: [number, number] = [0, 0];
   for (let i = 0; i < poly0.length; i++){
     for (let j = 0; j < poly1.length; j++){
       let [x0,y0] = poly0[i];
@@ -133,17 +146,17 @@ function poly_bridge(poly0,poly1){
   return u;
 }
 
-function poly_union(poly0,poly1,self_isect=false){
-  let verts0 = poly0.map(xy=>({xy, isects: [], isects_map: {}}));
-  let verts1 = poly1.map(xy=>({xy, isects: [], isects_map: {}}));
+function poly_union(poly0: Polyline, poly1: Polyline, self_isect=false): Polyline{
+  let verts0: Vertex[] = poly0.map(xy=>({xy, isects: [], isects_map: {}}));
+  let verts1: Vertex[] = poly1.map(xy=>({xy, isects: [], isects_map: {}}));
 
-  function pair_key() {
-    return Array.from(arguments).join(',');
+  function pair_key(...parts: number[]){
+    return parts.join(',');
   }
 
   let has_isect = false;
 
-  function build_vertices(poly,other,out,oout,idx){
+  function build_vertices(poly: Polyline, other: Polyline, out: Vertex[], oout: Vertex[], idx: number){
     let n = poly.length;
     let m = other.length;
     if (self_isect){
@@ -161,7 +174,7 @@ function poly_union(poly0,poly1,self_isect=false){
           }
           let c = poly[j];
           let d = poly[j1];
-          let xx;
+          let xx: Intersection | null;
           let ox = out[j].isects_map[id];
           if (ox) {
             xx = {
@@ -196,7 +209,7 @@ function poly_union(poly0,poly1,self_isect=false){
         let j1 = (j + 1 + m) % m;
         let c = other[j];
         let d = other[j1];
-        let xx;
+        let xx: Intersection | null;
 
         let ox = oout[j].isects_map[id];
         if (ox) {
@@ -233,8 +246,8 @@ function poly_union(poly0,poly1,self_isect=false){
   }
 
 
-  let isect_mir = {};
-  function mirror_isects(verts0,verts1,idx) {
+  let isect_mir: Record<string, [number, number, number]> = {};
+  function mirror_isects(verts0: Vertex[], verts1: Vertex[], idx: number){
     let n = verts0.length;
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < verts0[i].isects.length; j++) {
@@ -242,6 +255,7 @@ function poly_union(poly0,poly1,self_isect=false){
         let {jump} = verts0[i].isects[j];
         let jd = jump?(1-idx):idx;
         let k = verts0[i].isects[j].other;
+        if (k === null) continue;
         let z = (jump?verts1:verts0)[k].isects.findIndex((x) => (x.jump == jump && x.other == i));
         isect_mir[id] = [jd, k, z];
       }
@@ -252,10 +266,10 @@ function poly_union(poly0,poly1,self_isect=false){
 
   // console.log(verts0,verts1)
 
-  function trace_outline(idx, i0, j0, dir) {
-    let zero = null;
-    let out = [];
-    function trace_from(idx, i0, j0, dir) {
+  function trace_outline(idx: number, i0: number, j0: number, dir: number){
+    let zero: [number, number, number] | null = null;
+    let out: Polyline = [];
+    function trace_from(idx: number, i0: number, j0: number, dir: number): boolean{
       if (zero == null) {
         zero = [idx, i0, j0];
       } else if (idx == zero[0] && i0 == zero[1] && j0 == zero[2]) {
@@ -270,19 +284,19 @@ function poly_union(poly0,poly1,self_isect=false){
         if (dir < 0) {
           return trace_from(idx,i1, verts[i1].isects.length - 1, dir);
         } else if (!verts[i0].isects.length) {
-          return trace_from(idx, i1, -1, dir, [i0, j0]);
+          return trace_from(idx, i1, -1, dir);
         } else {
-          return trace_from(idx, i0, 0, dir, [i0, j0]);
+          return trace_from(idx, i0, 0, dir);
         }
       } else if (j0 >= p.isects.length) {
-        return trace_from(idx, i1, -1, dir, [i0, j0]);
+        return trace_from(idx, i1, -1, dir);
       } else {
         let id = pair_key(idx, i0, j0);
         out.push(p.isects[j0].xy);
 
         let q = p.isects[j0];
         let [jdx, k, z] = isect_mir[id];
-        let params;
+        let params: [number, number, number, number];
         if (q.side * dir < 0) {
           params = [jdx, k, z - 1, -1];
         } else {
@@ -299,7 +313,7 @@ function poly_union(poly0,poly1,self_isect=false){
   }
 
   let xmin = Infinity;
-  let amin = null;
+  let amin: [number, number] = [0, 0];
   for (let i = 0; i < poly0.length; i++) {
     if (poly0[i][0] < xmin) {
       xmin = poly0[i][0];
@@ -313,7 +327,7 @@ function poly_union(poly0,poly1,self_isect=false){
     }
   }
 
-  function check_concavity(poly, idx) {
+  function check_concavity(poly: Polyline, idx: number){
     let n = poly.length;
     let a = poly[(idx - 1 + n) % n];
     let b = poly[idx];
@@ -323,14 +337,14 @@ function poly_union(poly0,poly1,self_isect=false){
   }
 
   let cw = check_concavity(amin[0]?poly1:poly0, amin[1]);
-  let ret = trace_outline(...amin, -1, cw, true);
+  let ret = trace_outline(...amin, -1, cw);
   if (!ret) {
     return [];
   }
   return ret;
 }
 
-function seg_isect_poly(x0,y0,x1,y1,poly,is_ray=false){
+function seg_isect_poly(x0: number, y0: number, x1: number, y1: number, poly: Polyline, is_ray=false){
   let n = poly.length;
   let isects = [];
   for (let i = 0; i < poly.length; i++){
@@ -346,12 +360,12 @@ function seg_isect_poly(x0,y0,x1,y1,poly,is_ray=false){
 }
 
 
-function clip(polyline,polygon){
+function clip(polyline: Polyline, polygon: Polyline){
   if (!polyline.length){
     return {true:[],false:[]};
   }
   let zero = seg_isect_poly(...polyline[0],polyline[0][0]+Math.E,polyline[0][1]+PI,polygon,true).length % 2 != 0;
-  let out = {
+  let out: ClipResult = {
     'true' :[[]],
     'false':[[]],
   }
@@ -359,14 +373,14 @@ function clip(polyline,polygon){
   for (let i = 0; i < polyline.length; i++){
     let a= polyline[i];
     let b= polyline[i+1];
-    out[io][out[io].length-1].push(a);
+    out[String(io) as "true" | "false"][out[String(io) as "true" | "false"].length-1].push(a);
     if (!b) break;
 
     let isects = seg_isect_poly(...a,...b,polygon,false);
     for (let j = 0; j < isects.length; j++){
-      out[io][out[io].length-1].push(isects[j].xy);
+      out[String(io) as "true" | "false"][out[String(io) as "true" | "false"].length-1].push(isects[j].xy);
       io = !io;
-      out[io].push([isects[j].xy]);
+      out[String(io) as "true" | "false"].push([isects[j].xy]);
     }
   }
   out.true = out.true.filter(x=>x.length);
@@ -374,8 +388,8 @@ function clip(polyline,polygon){
   return out;
 }
 
-function clip_multi(polylines,polygon,clipper_func=clip){
-  let out = {
+function clip_multi<Region = Polyline>(polylines: Drawing, polygon: Region, clipper_func: (line: Polyline, region: Region) => ClipResult = clip as (line: Polyline, region: Region) => ClipResult){
+  let out: ClipResult = {
     true:[],
     false:[],
   };
@@ -387,7 +401,7 @@ function clip_multi(polylines,polygon,clipper_func=clip){
   return out;
 }
 
-function binclip(polyline,func){
+function binclip(polyline: Polyline, func: Pattern){
   if (!polyline.length){
     return {true:[],false:[]};
   }
@@ -397,7 +411,7 @@ function binclip(polyline,func){
     bins.push(func(...polyline[i],t));
   }
   let zero = bins[0];
-  let out = {
+  let out: ClipResult = {
     'true' :[[]],
     'false':[[]],
   }
@@ -405,16 +419,16 @@ function binclip(polyline,func){
   for (let i = 0; i < polyline.length; i++){
     let a= polyline[i];
     let b= polyline[i+1];
-    out[io][out[io].length-1].push(a);
+    out[String(io) as "true" | "false"][out[String(io) as "true" | "false"].length-1].push(a);
     if (!b) break;
 
     let do_isect = bins[i] != bins[i+1];
 
     if (do_isect){
       let pt = lerp2d(...a,...b,0.5);
-      out[io][out[io].length-1].push(pt);
+      out[String(io) as "true" | "false"][out[String(io) as "true" | "false"].length-1].push(pt);
       io = !io;
-      out[io].push([pt]);
+      out[String(io) as "true" | "false"].push([pt]);
     }
   }
   out.true = out.true.filter(x=>x.length);
@@ -423,13 +437,13 @@ function binclip(polyline,func){
 }
 
 
-function shade_shape(poly,step=5,dx=10,dy=20){
+function shade_shape(poly: Polyline, step=5, dx=10, dy=20){
   let bbox = get_bbox(poly);
   bbox.x -= step;
   bbox.y -= step;
   bbox.w += step*2;
   bbox.h += step*2;
-  let lines = [];
+  let lines: Drawing = [];
   for (let i = -bbox.h; i < bbox.w; i+=step){
     let x0 = bbox.x + i;
     let y0 = bbox.y;
@@ -459,13 +473,13 @@ function shade_shape(poly,step=5,dx=10,dy=20){
 }
 
 
-function fill_shape(poly,step=5){
+function fill_shape(poly: Polyline, step=5){
   let bbox = get_bbox(poly);
   bbox.x -= step;
   bbox.y -= step;
   bbox.w += step*2;
   bbox.h += step*2;
-  let lines = [];
+  let lines: Drawing = [];
   for (let i = 0; i < bbox.w+bbox.h/2; i+=step){
     let x0 = bbox.x + i;
     let y0 = bbox.y;
@@ -477,13 +491,13 @@ function fill_shape(poly,step=5){
   return lines;
 }
 
-function patternshade_shape(poly,step=5,pattern_func){
+function patternshade_shape(poly: Polyline, step=5, pattern_func: Pattern){
   let bbox = get_bbox(poly);
   bbox.x -= step;
   bbox.y -= step;
   bbox.w += step*2;
   bbox.h += step*2;
-  let lines = [];
+  let lines: Drawing = [];
   for (let i = -bbox.h/2; i < bbox.w; i+=step){
     let x0 = bbox.x + i;
     let y0 = bbox.y;
@@ -503,13 +517,13 @@ function patternshade_shape(poly,step=5,pattern_func){
 }
 
 
-function vein_shape(poly,n=50){
+function vein_shape(poly: Polyline, n=50){
   let bbox = get_bbox(poly);
-  let out = [];
+  let out: Drawing = [];
   for (let i = 0; i < n; i++){
     let x = bbox.x + rand()*bbox.w;
     let y = bbox.y + rand()*bbox.h;
-    let o = [[x,y]];
+    let o: Polyline = [[x,y]];
     for (let j = 0; j < 15; j++){
       let dx = (noise(x*0.1,y*0.1,7)-0.5)*4;
       let dy = (noise(x*0.1,y*0.1,6)-0.5)*4;
@@ -523,15 +537,15 @@ function vein_shape(poly,n=50){
   return out;
 }
 
-function smalldot_shape(poly,scale=1){
-  let samples = [];
+function smalldot_shape(poly: Polyline, scale=1){
+  let samples: Polyline = [];
   let bbox = get_bbox(poly);
   poissondisk(bbox.w,bbox.h,5*scale,samples);
   for (let i = 0; i < samples.length; i++){
     samples[i][0] += bbox.x;
     samples[i][1] += bbox.y;
   }
-  let out = [];
+  let out: Drawing = [];
   let n = 7;
   for (let i = 0; i < samples.length; i++){
     let [x,y] =samples[i]
@@ -541,7 +555,7 @@ function smalldot_shape(poly,scale=1){
       continue;
     }
     for (let k = 0; k < 2; k++){
-      let o = [];
+      let o: Polyline = [];
       for (let j = 0; j < n; j++){
         let t = j/(n-1);
         let a = t * PI * 2;
@@ -558,7 +572,7 @@ function smalldot_shape(poly,scale=1){
   return clip_multi(out,poly).true;
 }
 
-function isect_circ_line(cx,cy,r,x0,y0,x1,y1){
+function isect_circ_line(cx: number,cy: number,r: number,x0: number,y0: number,x1: number,y1: number){
   //https://stackoverflow.com/a/1084899
   let dx = x1-x0;
   let dy = y1-y0;
@@ -583,12 +597,12 @@ function isect_circ_line(cx,cy,r,x0,y0,x1,y1){
   return t;
 }
 
-function resample(polyline,step){
+function resample(polyline: Polyline, step: number){
   if (polyline.length < 2){
     return polyline.slice();
   }
   polyline = polyline.slice();
-  let out = [polyline[0].slice()];
+  let out: Polyline = [[...polyline[0]]];
   let next = null;
   let i = 0;
   while(i < polyline.length-1){
@@ -609,7 +623,7 @@ function resample(polyline,step){
       let t = j/n;
       let x = a[0]*(1-t) + rpx*t;
       let y = a[1]*(1-t) + rpy*t;
-      let xy = [x,y];
+      let xy: Point = [x,y];
       for (let k = 2; k < a.length; k++){
         xy.push(a[k]*(1-t) + (a[k] * (1-rest) + b[k] * rest)*t);
       }
@@ -628,7 +642,7 @@ function resample(polyline,step){
         continue;
       }
  
-      let q = [
+      let q: Point = [
         b[0]*(1-t)+c[0]*t,
         b[1]*(1-t)+c[1]*t,
       ];
@@ -657,12 +671,12 @@ function resample(polyline,step){
       out.pop(); 
     }
   }
-  out.push(polyline[polyline.length-1].slice());
+  out.push([...polyline[polyline.length-1]]);
   return out;
 }
 
 
-function pt_seg_dist(p, p0, p1)  {
+function pt_seg_dist(p: Point, p0: Point, p1: Point){
   // https://stackoverflow.com/a/6853926
   let x = p[0];   let y = p[1];
   let x1 = p0[0]; let y1 = p0[1];
@@ -674,7 +688,7 @@ function pt_seg_dist(p, p0, p1)  {
   if (len_sq != 0) {
     param = dot / len_sq;
   }
-  let xx; let yy;
+  let xx: number; let yy;
   if (param < 0) {
     xx = x1; yy = y1;
   }else if (param > 1) {
@@ -688,7 +702,7 @@ function pt_seg_dist(p, p0, p1)  {
   return Math.sqrt(dx*dx+dy*dy);
 }
 
-function approx_poly_dp(polyline, epsilon){
+function approx_poly_dp(polyline: Polyline, epsilon: number): Polyline{
   if (polyline.length <= 2){
     return polyline;
   }
@@ -703,26 +717,26 @@ function approx_poly_dp(polyline, epsilon){
       argmax = i;
     }  
   }
-  let ret = [];
+  let ret: Polyline = [];
   if (dmax > epsilon){
     let L = approx_poly_dp(polyline.slice(0,argmax+1),epsilon);
     let R = approx_poly_dp(polyline.slice(argmax,polyline.length),epsilon);
     ret = ret.concat(L.slice(0,L.length-1)).concat(R);
   }else{
-    ret.push(polyline[0].slice());
-    ret.push(polyline[polyline.length-1].slice());
+    ret.push([...polyline[0]]);
+    ret.push([...polyline[polyline.length-1]]);
   }
   return ret;
 }
 
-function distsq(x0, y0, x1, y1) {
+function distsq(x0: number,y0: number,x1: number,y1: number){
   let dx = x0-x1;
   let dy = y0-y1;
   return dx*dx+dy*dy;
 }
-function poissondisk(W, H, r, samples) {
-  let grid = [];
-  let active = [];
+function poissondisk(W: number, H: number, r: number, samples: Polyline){
+  let grid: number[] = [];
+  let active: Polyline = [];
   let w =  ((r) / (1.4142135624));
   let r2 = ((r) * (r));
   let cols = (~~(((W) / (w))));
@@ -730,7 +744,7 @@ function poissondisk(W, H, r, samples) {
   for (let i = (0); Number((i) < (((cols) * (rows)))); i += (1)) {
     (grid).splice((grid.length), 0, (-1));
   };
-  let pos = [(((W) / (2.0))), (((H) / (2.0)))];
+  let pos: Point = [(((W) / (2.0))), (((H) / (2.0)))];
   (samples).splice((samples.length), 0, (pos));
   for (let i = (0); Number((i) < (samples.length)); i += (1)) {
     let col = (~~(((((((samples)[i]))[0])) / (w))));
@@ -766,7 +780,7 @@ function poissondisk(W, H, r, samples) {
         if (ok) {
           found = 1;
           ((grid)[((((row) * (cols))) + (col))] = samples.length);
-          let sample = [(sx), (sy)];
+          let sample: Point = [(sx), (sy)];
           (active).splice((active.length), 0, (sample));
           (samples).splice((samples.length), 0, (sample));
         };
@@ -779,7 +793,7 @@ function poissondisk(W, H, r, samples) {
 }
 
 
-function draw_svg(polylines){
+function draw_svg(polylines: Drawing){
   let o = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="320">`
   o += `<rect x="0" y="0" width="520" height="320" fill="floralwhite"/><rect x="10" y="10" width="500" height="300" stroke="black" stroke-width="1" fill="none"/><path stroke="black" stroke-width="1" fill="none" stroke-linecap="round" stroke-linejoin="round" d="`
   for (let i = 0; i < polylines.length; i++){
@@ -793,7 +807,7 @@ function draw_svg(polylines){
   return o;
 }
 
-function draw_svg_anim(polylines,speed){
+function draw_svg_anim(polylines: Drawing, speed: number){
   let o = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="320">`;
   o += `<rect x="0" y="0" width="520" height="320" fill="floralwhite"/><rect x="10" y="10" width="500" height="300" stroke="black" stroke-width="1" fill="none"/>`
   let lengths = [];
@@ -822,7 +836,8 @@ function draw_svg_anim(polylines,speed){
       stroke-dashoffset="${l}"
       d="M`;
     for (let j = 0; j < polylines[i].length; j++){
-      o += polylines[i][j] + ' ';
+      const [x, y] = polylines[i][j];
+      o += `${x + 10},${y + 10} `;
     }
     let t = speed*l;
     o += `">
@@ -831,20 +846,18 @@ function draw_svg_anim(polylines,speed){
       fill="freeze"
       from="${l}" to="${0}" dur="${t}s" 
       begin="${(acc_lengths[i])*speed}s;a${i}.end+${8+speed*total_l-t}s"/>
-    />
     <animate id="b${i}"
       attributeName="stroke-dashoffset" 
       fill="freeze"
       from="${0}" to="${l}" dur="${3}s" 
       begin="${5+speed*total_l}s;b${i}.end+${5+speed*total_l}s"/>
-    />
     </path>`;
   }
   o += `</svg>`;
   return o;
 }
 
-function draw_ps(polylines){
+function draw_ps(polylines: Drawing){
   let o = `%!PS-Adobe-3.0 EPSF-3.0
 %%BoundingBox: 0 0 520 320
 1 setlinewidth
@@ -878,18 +891,18 @@ F
 
 
 
-function pow(a,b){
+function pow(a: number,b: number){
   return Math.sign(a) * Math.pow(Math.abs(a),b);
 }
 
-function gauss2d(x, y){
+function gauss2d(x: number,y: number){
   let z0 = Math.exp(-0.5*x*x);
   let z1 = Math.exp(-0.5*y*y);
   return z0*z1;
  }
 
-function squama_mask(w,h){
-  let p = [];
+function squama_mask(w: number, h: number){
+  let p: Polyline = [];
   let n = 7;
   for (let i = 0; i < n; i++){
     let t = i/n;
@@ -901,8 +914,8 @@ function squama_mask(w,h){
   return p;
 }
 
-function squama(w,h,m=3) {
-  let p = [];
+function squama(w: number, h: number, m=3){
+  let p: Polyline = [];
   let n = 8;
   for (let i = 0; i < n; i++){
     let t = i/(n-1);
@@ -922,18 +935,18 @@ function squama(w,h,m=3) {
   return q;
 }
 
-function trsl_poly(poly,x,y){
+function trsl_poly(poly: Polyline, x: number, y: number): Polyline{
   return poly.map(xy=>[xy[0]+x,xy[1]+y]);
 }
-function scl_poly(poly,sx,sy){
+function scl_poly(poly: Polyline, sx: number, sy: number): Polyline{
   if (sy === undefined) sy = sx;
   return poly.map(xy=>[xy[0]*sx,xy[1]*sy]);
 }
-function shr_poly(poly,sx){
+function shr_poly(poly: Polyline, sx: number): Polyline{
   return poly.map(xy=>[xy[0]+xy[1]*sx,xy[1]]);
 }
-function rot_poly(poly,th){
-  let qoly = [];
+function rot_poly(poly: Polyline, th: number): Polyline{
+  let qoly: Polyline = [];
   let costh = Math.cos(th);
   let sinth = Math.sin(th);
   for (let i = 0; i < poly.length; i++){
@@ -945,10 +958,10 @@ function rot_poly(poly,th){
   return qoly;
 }
 
-function squama_mesh(m,n,uw,uh,squama_func,noise_x,noise_y,interclip=true){
-  let clipper = null;
+function squama_mesh(m: number, n: number, uw: number, uh: number, squama_func: (x: number, y: number, w: number, h: number) => Drawing, noise_x: number, noise_y: number, interclip=true){
+  let clipper: Polyline | null = null;
 
-  let pts = [];
+  let pts: Polyline = [];
   for (let i = 0; i < n; i++){
     for (let j = 0; j < m; j++){
       let x = j*uw;
@@ -960,9 +973,9 @@ function squama_mesh(m,n,uw,uh,squama_func,noise_x,noise_y,interclip=true){
       pts.push([x+dx,y+dy]);
     }
   }
-  let out = [];
+  let out: Drawing = [];
 
-  let whs = [];
+  let whs: Polyline = [];
   for (let i = 0; i < n; i++){
     for (let j = 0; j < m; j++){
       if (i == 0 || j == 0 || i == n-1 || j == m-1){
@@ -1043,13 +1056,13 @@ function squama_mesh(m,n,uw,uh,squama_func,noise_x,noise_y,interclip=true){
 }
 
 function pattern_dot(scale=1){
-  let samples = [];
+  let samples: Polyline = [];
   poissondisk(500,300,20*scale,samples);
-  let rs = [];
+  let rs: number[] = [];
   for (let i = 0; i < samples.length; i++){
     rs.push((rand()*5+10)*scale)
   }
-  return function(x,y){
+  return function(x: number,y: number){
     for (let i = 0; i < samples.length; i++){
       let r = rs[i];
       if (dist(x,y,...samples[i])<r){
@@ -1069,9 +1082,9 @@ function pattern_dot(scale=1){
 
 
 
-function fish_body_a(curve0,curve1,scale_scale,pattern_func){
-  let curve2 = [];
-  let curve3 = [];
+function fish_body_a(curve0: Polyline, curve1: Polyline, scale_scale: number, pattern_func: ((x: number, y: number) => boolean) | null){
+  let curve2: Polyline = [];
+  let curve3: Polyline = [];
   for (let i = 0; i < curve0.length; i++){
     curve2.push(lerp2d(...curve0[i],...curve1[i],0.95));
     curve3.push(lerp2d(...curve0[i],...curve1[i],0.85));
@@ -1086,18 +1099,18 @@ function fish_body_a(curve0,curve1,scale_scale,pattern_func){
   let uw = bbox.w/m;
   let uh = bbox.h/n;
 
-  let fn = pattern_func?((x,y,w,h)=>squama(w,h,Number(pattern_func(x,y))*3)):((x,y,w,h)=>squama(w,h))
+  let fn: (x: number, y: number, w: number, h: number) => Drawing = pattern_func?((x,y,w,h)=>squama(w,h,Number(pattern_func(x,y))*3)):((x,y,w,h)=>squama(w,h))
   let sq = squama_mesh(m,n+3,uw,uh,fn,uw*3,uh*3,true).map(a=>trsl_poly(a,bbox.x,bbox.y-uh*1.5));
-  let o0 = clip_multi(sq,outline2)[true];
+  let o0 = clip_multi(sq,outline2).true;
   let o1 = clip_multi(o0,outline3);
   o1.false = o1.false.filter(x=>rand()<0.6);
-  let o = [];
+  let o: Drawing = [];
   o.push(curve0,curve1.slice().reverse(),...o1.true,...o1.false);
   return o;
 }
 
-function fish_body_b(curve0,curve1,scale_scale,pattern_func){
-  let curve2 = [];
+function fish_body_b(curve0: Polyline, curve1: Polyline, scale_scale: number, pattern_func: ((x: number, y: number) => boolean) | null){
+  let curve2: Polyline = [];
   for (let i = 0; i < curve0.length; i++){
     curve2.push(lerp2d(...curve0[i],...curve1[i],0.95));
   }
@@ -1111,9 +1124,9 @@ function fish_body_b(curve0,curve1,scale_scale,pattern_func){
   let uh = bbox.h/n;
 
   let sq = squama_mesh(m,n+16,uw,uh,(x,y,w,h)=>squama(w*0.7,h*0.6,0),uw*8,uh*8,false).map(a=>trsl_poly(a,bbox.x,bbox.y-uh*8));
-  let o0 = clip_multi(sq,outline2)[true];
+  let o0 = clip_multi(sq,outline2).true;
 
-  let o1 = [];
+  let o1: Drawing = [];
   for (let i = 0; i < o0.length; i++){
     let [x,y] = o0[i][0];
     let t = (y-bbox.y)/bbox.h;
@@ -1133,21 +1146,21 @@ function fish_body_b(curve0,curve1,scale_scale,pattern_func){
       }
     }
   }
-  let o = [];
+  let o: Drawing = [];
   o.push(curve0,curve1.slice().reverse(),...o1);
   return o;
 }
 
 
-function ogee(x){
+function ogee(x: number){
   return 4 * Math.pow(x-0.5,3) + 0.5;
 }
 
-function fish_body_c(curve0,curve1,scale_scale){
+function fish_body_c(curve0: Polyline, curve1: Polyline, scale_scale: number){
   let step = 6*scale_scale;
 
-  let curve2 = [];
-  let curve3 = [];
+  let curve2: Polyline = [];
+  let curve3: Polyline = [];
 
   for (let i = 0; i < curve0.length; i++){
     curve2.push(lerp2d(...curve0[i],...curve1[i],0.95));
@@ -1162,7 +1175,7 @@ function fish_body_c(curve0,curve1,scale_scale){
   bbox.w += step*2;
   bbox.h += step*2;
 
-  let lines = [curve3.reverse()];
+  let lines: Drawing = [curve3.reverse()];
 
   for (let i = -bbox.h; i < bbox.w; i+=step){
     let x0 = bbox.x + i;
@@ -1193,19 +1206,19 @@ function fish_body_c(curve0,curve1,scale_scale){
     }
   }
 
-  let o0 = clip_multi(lines,outline2)[true];
+  let o0 = clip_multi(lines,outline2).true;
 
   o0 = clip_multi(o0,(x,y,t)=>(rand()>t||rand()>t),binclip).true;
   
 
-  let o = [];
+  let o: Drawing = [];
   
   o.push(curve0,curve1.slice().reverse(),...o0);
   return o;
 }
 
-function fish_body_d(curve0,curve1,scale_scale){
-  let curve2 = [];
+function fish_body_d(curve0: Polyline, curve1: Polyline, scale_scale: number){
+  let curve2: Polyline = [];
   for (let i = 0; i < curve0.length; i++){
     curve2.push(lerp2d(...curve0[i],...curve1[i],0.4));
   }
@@ -1224,7 +1237,7 @@ function fish_body_d(curve0,curve1,scale_scale){
     o0.push(a,b);
   }
 
-  let o1 = [];
+  let o1: Drawing = [];
   for (let i = 0; i < o0.length; i++){
     o0[i] = resample(o0[i],4);
     for (let j = 0; j < o0[i].length; j++){
@@ -1243,7 +1256,7 @@ function fish_body_d(curve0,curve1,scale_scale){
 
   let sh = vein_shape(outline1);
 
-  let o = [];
+  let o: Drawing = [];
   o.push(curve0,curve1.slice().reverse(),...o1,...sh);
   return o;
 }
@@ -1251,8 +1264,8 @@ function fish_body_d(curve0,curve1,scale_scale){
 
 
 
-function fin_a(curve,ang0,ang1,func,clip_root=false,curvature0=0,curvature1=0,softness=10){
-  let angs = [];
+function fin_a(curve: Polyline, ang0: number, ang1: number, func: (t: number) => number, clip_root=false, curvature0=0, curvature1=0, softness=10): [Polyline, Drawing]{
+  let angs: number[] = [];
   for (let i = 0; i < curve.length; i++){
     
     if (i == 0){
@@ -1270,10 +1283,10 @@ function fin_a(curve,ang0,ang1,func,clip_root=false,curvature0=0,curvature1=0,so
       angs.push(a);
     }
   }
-  let out0 = [];
-  let out1 = [];
-  let out2 = [];
-  let out3 = [];
+  let out0: Polyline = [];
+  let out1: Drawing = [];
+  let out2: Polyline = [];
+  let out3: Polyline = [];
   for (let i = 0; i < curve.length; i++){
     let t = i/(curve.length-1);
     let aa = lerp(ang0,ang1,t);
@@ -1319,8 +1332,8 @@ function fin_a(curve,ang0,ang1,func,clip_root=false,curvature0=0,curvature1=0,so
 }
 
 
-function fin_b(curve,ang0,ang1,func,dark=1){
-  let angs = [];
+function fin_b(curve: Polyline, ang0: number, ang1: number, func: (t: number) => number, dark=1): [Polyline, Drawing]{
+  let angs: number[] = [];
   for (let i = 0; i < curve.length; i++){
     
     if (i == 0){
@@ -1339,10 +1352,10 @@ function fin_b(curve,ang0,ang1,func,dark=1){
     }
   }
   
-  let out0 = [];
-  let out1 = [];
-  let out2 = [];
-  let out3 = [];
+  let out0: Drawing = [];
+  let out1: Polyline = [];
+  let out2: Drawing = [];
+  let out3: Drawing = [];
   for (let i = 0; i < curve.length; i++){
     let t = i/(curve.length-1);
     let aa = lerp(ang0,ang1,t);
@@ -1353,20 +1366,20 @@ function fin_b(curve,ang0,ang1,func,dark=1){
     let x1 = x0 + Math.cos(a)*w;
     let y1 = y0 + Math.sin(a)*w;
 
-    let b = [
+    let b: Point = [
       x1 + 0.5 * Math.cos(a-PI/2),
       y1 + 0.5 * Math.sin(a-PI/2),
     ];
-    let c = [
+    let c: Point = [
       x1 + 0.5 * Math.cos(a+PI/2),
       y1 + 0.5 * Math.sin(a+PI/2),
     ];
 
-    let p = [
+    let p: Point = [
       curve[i][0] + 1.8 * Math.cos(a-PI/2),
       curve[i][1] + 1.8 * Math.sin(a-PI/2),
     ];
-    let q = [
+    let q: Point = [
       curve[i][0] + 1.8 * Math.cos(a+PI/2),
       curve[i][1] + 1.8 * Math.sin(a+PI/2),
     ];
@@ -1380,10 +1393,10 @@ function fin_b(curve,ang0,ang1,func,dark=1){
     let [_,__,a0,q0] = out0[i];
     let [p1,a1,___,____] = out0[i+1];
 
-    let b = lerp2d(...a0,...q0,0.1);
-    let c = lerp2d(...a1,...p1,0.1);
+    let b: Point = lerp2d(...a0,...q0,0.1);
+    let c: Point = lerp2d(...a1,...p1,0.1);
 
-    let o = [];
+    let o: Polyline = [];
     let ang = Math.atan2(c[1]-b[1],c[0]-b[0]);
 
     for (let j = 0; j < n; j++){
@@ -1402,7 +1415,7 @@ function fin_b(curve,ang0,ang1,func,dark=1){
     let m = ~~( Math.min(dist(...a0,...q0),dist(...a1,...p1) ) /10 * dark);
     let e = lerp2d(...curve[i],...curve[i+1],0.5);
     for (let k = 0; k < m; k ++){
-      let p = [];
+      let p: Polyline = [];
       let s= k/m*0.7;
       for (let j = 1; j < n-1; j++){
         p.push(lerp2d(...o[j],...e,s));
@@ -1411,7 +1424,7 @@ function fin_b(curve,ang0,ang1,func,dark=1){
     }
   }
 
-  let out4 = [];
+  let out4: Drawing = [];
   if (out0.length > 1){
     let clipper = out0[0];
     out4.push(out0[0])
@@ -1425,8 +1438,8 @@ function fin_b(curve,ang0,ang1,func,dark=1){
 }
 
 
-function finlet(curve,h,dir=1){
-  let angs = [];
+function finlet(curve: Polyline, h: number, dir=1): [Polyline, Drawing]{
+  let angs: number[] = [];
   for (let i = 0; i < curve.length; i++){
     if (i == 0){
       angs.push( Math.atan2(curve[i+1][1]-curve[i][1], curve[i+1][0]-curve[i][0]) - PI/2 );
@@ -1443,7 +1456,7 @@ function finlet(curve,h,dir=1){
       angs.push(a);
     }
   }
-  let out0 = [];
+  let out0: Polyline = [];
   for (let i = 0; i < curve.length; i++){
     let t = i/(curve.length-1);
     let a = angs[i];
@@ -1470,7 +1483,7 @@ function finlet(curve,h,dir=1){
   return [out0.concat(curve.slice().reverse()),[out0]];
 }
 
-function fin_adipose(curve,dx,dy,r){
+function fin_adipose(curve: Polyline, dx: number, dy: number, r: number): [Polyline, Drawing]{
   let n = 20;
   let [x0,y0] = curve[~~(curve.length/2)];
   let [x,y] = [x0+dx,y0+dy];
@@ -1486,11 +1499,11 @@ function fin_adipose(curve,dx,dy,r){
   while (a02 < a01){
     a02 += PI*2;
   }
-  let out0 = [[x1,y1]]
+  let out0: Polyline = [[x1,y1]]
   for (let i = 0; i < n; i++){
     let t = i/(n-1);
     let a = lerp(a01,a02,t);
-    let p = [
+    let p: Point = [
       x+Math.cos(a)*r,
       y+Math.sin(a)*r,
     ]
@@ -1514,7 +1527,7 @@ function fin_adipose(curve,dx,dy,r){
 }
 
 
-function fish_lip(x0,y0,x1,y1,w){
+function fish_lip(x0: number,y0: number,x1: number,y1: number,w: number){
   x0 += rand()*0.001-0.0005;
   y0 += rand()*0.001-0.0005;
   x1 += rand()*0.001-0.0005;
@@ -1525,7 +1538,7 @@ function fish_lip(x0,y0,x1,y1,w){
   let ang = Math.acos(w/h);
   let dx = Math.cos(a0+PI/2)*0.5;
   let dy = Math.sin(a0+PI/2)*0.5;
-  let o = [[x0-dx,y0-dy]];
+  let o: Polyline = [[x0-dx,y0-dy]];
   for (let i = 0; i < n; i++){
     let t = i/(n-1);
     let a = lerp(ang,PI*2-ang,t) + a0;
@@ -1543,29 +1556,29 @@ function fish_lip(x0,y0,x1,y1,w){
   return o;
 }
 
-function fish_teeth(x0,y0,x1,y1,h,dir,sep=3.5){
+function fish_teeth(x0: number,y0: number,x1: number,y1: number,h: number,dir: number,sep=3.5){
   let n = Math.max(2,~~(dist(x0,y0,x1,y1)/sep));
   let ang = Math.atan2(y1-y0,x1-x0);
-  let out = [];
+  let out: Drawing = [];
   for (let i = 0; i < n; i++){
     let t = i/(n-1);
     let a = lerp2d(x0,y0,x1,y1,t);
     let w = h*t;
-    let b = [
+    let b: Point = [
       a[0]+Math.cos(ang+dir*PI/2)*w,
       a[1]+Math.sin(ang+dir*PI/2)*w,
     ];
-    let c = [
+    let c: Point = [
       a[0] + 1 * Math.cos(ang),
       a[1] + 1 * Math.sin(ang),
     ];
-    let d = [
+    let d: Point = [
       a[0] + 1 * Math.cos(ang+PI),
       a[1] + 1 * Math.sin(ang+PI),
     ];
     let e = lerp2d(...c,...b,0.7);
     let f = lerp2d(...d,...b,0.7);
-    let g = [
+    let g: Point = [
       a[0]+Math.cos(ang+dir*(PI/2+0.15))*w,
       a[1]+Math.sin(ang+dir*(PI/2+0.15))*w,
     ]
@@ -1575,21 +1588,21 @@ function fish_teeth(x0,y0,x1,y1,h,dir,sep=3.5){
   return out;
 }
 
-function fish_jaw(x0,y0,x1,y1,x2,y2){
+function fish_jaw(x0: number,y0: number,x1: number,y1: number,x2: number,y2: number): [Polyline, Drawing]{
   let n = 10;
   let ang = Math.atan2(y2-y0,x2-x0);
   let d = dist(x0,y0,x2,y2);
-  let o = [];
+  let o: Polyline = [];
   for (let i = 0; i < n; i++){
     let t = i/(n-1);
     let s = Math.sin(t*PI);
     let w = s*d/20;
     let p = lerp2d(x2,y2,x0,y0,t);
-    let q = [
+    let q: Point = [
       p[0] + Math.cos(ang-PI/2)*w,
       p[1] + Math.sin(ang-PI/2)*w,
     ]
-    let qq = [
+    let qq: Point = [
       q[0] + (noise(q[0]*0.01,q[1]*0.01,1)-0.5)*4*s,
       q[1] + (noise(q[0]*0.01,q[1]*0.01,4)-0.5)*4*s,
     ];
@@ -1599,11 +1612,11 @@ function fish_jaw(x0,y0,x1,y1,x2,y2){
 }
 
 
-function fish_eye_a(ex,ey,rad){
+function fish_eye_a(ex: number,ey: number,rad: number): [Polyline, Drawing]{
   let n = 20;
-  let eye0 = [];
-  let eye1 = [];
-  let eye2 = [];
+  let eye0: Polyline = [];
+  let eye1: Polyline = [];
+  let eye2: Polyline = [];
   for (let i = 0; i < n; i++){
     let t = i/(n-1);
     let a = t * PI*2 + Math.PI/4*3;
@@ -1627,11 +1640,11 @@ function fish_eye_a(ex,ey,rad){
   return [eye0,[eye0,eye1,eye2,...ef]];
 }
 
-function fish_eye_b(ex,ey,rad){
+function fish_eye_b(ex: number,ey: number,rad: number): [Polyline, Drawing]{
   let n = 20;
-  let eye0 = [];
-  let eye1 = [];
-  let eye2 = [];
+  let eye0: Polyline = [];
+  let eye1: Drawing = [];
+  let eye2: Polyline = [];
   for (let i = 0; i < n; i++){
     let t = i/(n-1);
     let a = t * PI*2+Math.E;
@@ -1647,7 +1660,7 @@ function fish_eye_b(ex,ey,rad){
   let m =~~((rad*0.6)/2);
   for (let i = 0; i < m; i++){
     let r = rad - i * 2;
-    let e = [];
+    let e: Polyline = [];
     for (let i = 0; i < n; i++){
       let t = i/(n-1);
       let a = lerp(PI*7/8,PI*13/8,t)
@@ -1659,7 +1672,7 @@ function fish_eye_b(ex,ey,rad){
     }
     eye1.push(e);
   }
-  let trig = [
+  let trig: Polyline = [
     [ex+Math.cos(-PI*3/4)*(rad*0.9),ey+Math.sin(-PI*3/4)*(rad*0.9)],
     [ex+1,ey+1],
     [ex+Math.cos(-PI*11/12)*(rad*0.9),ey+Math.sin(-PI*11/12)*(rad*0.9)],
@@ -1677,14 +1690,14 @@ function fish_eye_b(ex,ey,rad){
 
   ef = clip_multi(ef,trig).false;
   eye1 = clip_multi(eye1,trig).false;
-  eye2 = clip(eye2,trig).false;
+  const eye2Clipped = clip(eye2,trig).false;
 
-  return [eye0,[eye0,...eye1,...eye2,...ef]];
+  return [eye0,[eye0,...eye1,...eye2Clipped,...ef]];
 }
 
 
-function barbel(x,y,n,ang,dd=3){
-  let curve = [[x,y]];
+function barbel(x: number,y: number,n: number,ang: number,dd=3){
+  let curve: Polyline = [[x,y]];
   let sd = rand()*PI*2;
   let ar = 1;
   for (let i = 0; i < n; i++){
@@ -1698,8 +1711,8 @@ function barbel(x,y,n,ang,dd=3){
     }
     curve.push([x,y]);
   }
-  let o0 = [];
-  let o1 = [];
+  let o0: Polyline = [];
+  let o1: Polyline = [];
   for (let i = 0; i < n-1; i++){
     let t = i/(n-1);
     let w = 1.5*(1-t);
@@ -1736,11 +1749,11 @@ function barbel(x,y,n,ang,dd=3){
   return o0.concat(o1.slice().reverse());
 }
 
-function fish_head(x0,y0,x1,y1,x2,y2,arg){
+function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y2: number, arg: FishParams): [Polyline, Drawing]{
   let n = 20;
-  let curve0 = [];
-  let curve1 = [];
-  let curve2 = [];
+  let curve0: Polyline = [];
+  let curve1: Polyline = [];
+  let curve2: Polyline = [];
   for (let i = 0; i < n; i++){
     let t = i/(n-1);
     let a = PI/2 * t;
@@ -1807,7 +1820,7 @@ function fish_head(x0,y0,x1,y1,x2,y2,arg){
   let jaw_l = dist(...jaw_pt0,...curve1[18])*arg.jaw_size;
   let jaw_ang0 = Math.atan2(curve1[18][1]-jaw_pt0[1],curve1[18][0]-jaw_pt0[0]);
   let jaw_ang =jaw_ang0- (arg.has_teeth*0.5+0.5)*arg.jaw_open*PI/4;
-  let jaw_pt1 = [
+  let jaw_pt1: Point = [
     jaw_pt0[0]+Math.cos(jaw_ang)*jaw_l,
     jaw_pt0[1]+Math.sin(jaw_ang)*jaw_l,
   ]
@@ -1826,8 +1839,8 @@ function fish_head(x0,y0,x1,y1,x2,y2,arg){
   jaw = clip_multi(jaw,lip1).false;
   jaw = clip_multi(jaw,outline).false;
 
-  let teeth0s = [];
-  let teeth1s = [];
+  let teeth0s: Drawing = [];
+  let teeth1s: Drawing = [];
   if (arg.has_teeth){
     let teeth0 = fish_teeth(...jaw_pt0,...curve1[18],arg.teeth_length,-1,arg.teeth_space);
     let teeth1 = fish_teeth(...jaw_pt0,...jaw_pt1,    arg.teeth_length,1,arg.teeth_space);
@@ -1844,9 +1857,9 @@ function fish_head(x0,y0,x1,y1,x2,y2,arg){
   sh = clip_multi(sh,lip0).false;
   sh = clip_multi(sh,eye0).false;
 
-  let sh2 = vein_shape(outline,arg.head_texture_amount);
+  let sh2: Drawing = vein_shape(outline,arg.head_texture_amount);
 
-  // let sh2 = patternshade_shape(outline,3,(x,y)=>{
+  // let sh2: Drawing = patternshade_shape(outline,3,(x,y)=>{
   //   return noise(x*0.1,y*0.1)>0.6;
   // })
 
@@ -1855,7 +1868,7 @@ function fish_head(x0,y0,x1,y1,x2,y2,arg){
   
   let bbs = [];
 
-  lip1s = [lip1];
+  let lip1s: Drawing = [lip1];
 
   if (arg.has_moustache){
     let bb0 = barbel(...jaw_pt0,arg.moustache_length,PI*3/4,1.5);
@@ -1881,7 +1894,7 @@ function fish_head(x0,y0,x1,y1,x2,y2,arg){
     bbs.push(bb1,...bb2c,...bb3c);
   }
 
-  let outlinel = [[0,0],[curve0[curve0.length-1][0],0],curve0[curve0.length-1],...curve2,curve1[0],[curve1[0][0],300],[0,300]];
+  let outlinel: Polyline = [[0,0],[curve0[curve0.length-1][0],0],curve0[curve0.length-1],...curve2,curve1[0],[curve1[0][0],300],[0,300]];
 
   
   return [outlinel,[
@@ -1893,19 +1906,19 @@ function fish_head(x0,y0,x1,y1,x2,y2,arg){
     ...jaw]];
 }
 
-function bean(x){
+function bean(x: number){
   return Math.pow(0.25-Math.pow(x-0.5,2),0.5)*(2.6+2.4*Math.pow(x,1.5))*0.542;
 }
 
-function deviate(n){
+function deviate(n: number){
   return rand()*2*n-n;
 }
 
 
-function fish(arg){
+function fish(arg: FishParams){
   let n = 32;
-  let curve0 = [];
-  let curve1 = [];
+  let curve0: Polyline = [];
+  let curve1: Polyline = [];
   if (arg.body_curve_type == 0){
     let s = arg.body_curve_amount;
     for (let i = 0; i < n; i++){
@@ -1939,7 +1952,7 @@ function fish(arg){
   let outline = curve0.concat(curve1.slice().reverse());
   let sh = shade_shape(outline,8,-12,-12);
 
-  let pattern_func;
+  let pattern_func: ((x: number, y: number) => boolean) | null = null;
   if (arg.pattern_type == 0){
     //none
     pattern_func = null;
@@ -1962,7 +1975,7 @@ function fish(arg){
     pattern_func = null;
   }
 
-  let bd;
+  let bd: Drawing = [];
   if (arg.scale_type == 0){
     bd = fish_body_a(curve0,curve1,arg.scale_scale,pattern_func);
   }else if (arg.scale_type == 1){
@@ -1973,7 +1986,8 @@ function fish(arg){
     bd = fish_body_d(curve0,curve1,arg.scale_scale);
   }
 
-  let f0_func, f0_a0, f0_a1, f0_cv;
+  let f0_func: (t: number) => number = () => 0;
+  let f0_a0 = 0, f0_a1 = 0, f0_cv = 0;
   if (arg.dorsal_type == 0){
     f0_a0 = 0.2 + deviate(0.05);
     f0_a1 = 0.3 + deviate(0.05);
@@ -1995,8 +2009,9 @@ function fish(arg){
   }
   f0 = clip_multi(f0,trsl_poly(outline,0,0.001)).false;
   
-  let f1_curve = [];
-  let f1_func, f1_a0, f1_a1, f1_soft, f1_cv;
+  let f1_curve: Polyline = [];
+  let f1_func: (t: number) => number;
+  let  f1_a0, f1_a1, f1_soft, f1_cv;
   let f1_pt = lerp2d(...curve0[arg.wing_start],...curve1[arg.wing_end],arg.wing_y);
 
   for (let i = 0; i < 10; i++){
@@ -2021,7 +2036,7 @@ function fish(arg){
   let c1,f1;
   if (arg.wing_texture_type == 0){
     f1_curve = resample(f1_curve,1.5);
-    ;[c1,f1] = fin_a(f1_curve,f1_a0,f1_a1,f1_func,1,f1_cv,0,f1_soft);
+    ;[c1,f1] = fin_a(f1_curve,f1_a0,f1_a1,f1_func,true,f1_cv,0,f1_soft);
   }else{
     f1_curve = resample(f1_curve,4);
     ;[c1,f1] = fin_b(f1_curve,f1_a0,f1_a1,f1_func,0.3);
@@ -2030,7 +2045,8 @@ function fish(arg){
 
 
   let f2_curve;
-  let f2_func, f2_a0, f2_a1;
+  let f2_func: (t: number) => number;
+  let  f2_a0, f2_a1;
   if (arg.pelvic_type == 0){
     f2_a0 = -0.8 + deviate(0.05);;
     f2_a1 = -0.5 + deviate(0.05);;
@@ -2051,7 +2067,8 @@ function fish(arg){
   f2 = clip_multi(f2,c1).false;
 
   let f3_curve;
-  let f3_func, f3_a0, f3_a1;
+  let f3_func: (t: number) => number;
+  let  f3_a0, f3_a1;
   if (arg.anal_type == 0){
     f3_a0 = -0.4 + deviate(0.05);;
     f3_a1 = -0.4 + deviate(0.05);;
@@ -2071,7 +2088,7 @@ function fish(arg){
   }
   f3 = clip_multi(f3,c1).false;
 
-  let f4_curve, c4, f4;
+  let f4_curve: Polyline, c4: Polyline = [], f4: Drawing = [];
   let f4_r = dist(...curve0[curve0.length-2],...curve1[curve1.length-2]);
   let f4_n = ~~(f4_r/1.5);
   f4_n = Math.max(Math.min(f4_n,20),8);
@@ -2080,35 +2097,35 @@ function fish(arg){
   if (arg.tail_type == 0){
     f4_curve = [curve0[curve0.length-1], curve1[curve1.length-1]];
     f4_curve = resample(f4_curve,f4_d);
-    ;[c4,f4] = fin_a(f4_curve,-0.6,0.6,t=>(  (75-(10+noise(t*3)*10)*Math.sin(3*t*PI-PI))/75*arg.tail_length  ),1);  
+    ;[c4,f4] = fin_a(f4_curve,-0.6,0.6,t=>(  (75-(10+noise(t*3)*10)*Math.sin(3*t*PI-PI))/75*arg.tail_length  ),true);
   }else if (arg.tail_type == 1){
     f4_curve = [curve0[curve0.length-2], curve1[curve1.length-2]];
     f4_curve = resample(f4_curve,f4_d);
-    ;[c4,f4] = fin_a(f4_curve,-0.6,0.6,t=>( arg.tail_length*(Math.sin(t*PI)*0.5+0.5)  ),1); 
+    ;[c4,f4] = fin_a(f4_curve,-0.6,0.6,t=>( arg.tail_length*(Math.sin(t*PI)*0.5+0.5)  ),true);
   }else if (arg.tail_type == 2){
     f4_curve = [curve0[curve0.length-1], curve1[curve1.length-1]];
     f4_curve = resample(f4_curve,f4_d*0.7);
     let cv = arg.tail_length/8;
-    ;[c4,f4] = fin_a(f4_curve,-0.6,0.6,t=>(  (Math.abs(Math.cos(PI*t))*0.8+0.2)*arg.tail_length  ),1,cv,-cv);  
+    ;[c4,f4] = fin_a(f4_curve,-0.6,0.6,t=>(  (Math.abs(Math.cos(PI*t))*0.8+0.2)*arg.tail_length  ),true,cv,-cv);
   }else if (arg.tail_type == 3){
     f4_curve = [curve0[curve0.length-2], curve1[curve1.length-2]];
     f4_curve = resample(f4_curve,f4_d);
-    ;[c4,f4] = fin_a(f4_curve,-0.6,0.6,t=>(  (1-Math.sin(t*PI)*0.3)*arg.tail_length  ),1);  
+    ;[c4,f4] = fin_a(f4_curve,-0.6,0.6,t=>(  (1-Math.sin(t*PI)*0.3)*arg.tail_length  ),true);
   }else if (arg.tail_type == 4){
     f4_curve = [curve0[curve0.length-2], curve1[curve1.length-2]];
     f4_curve = resample(f4_curve,f4_d);
-    ;[c4,f4] = fin_a(f4_curve,-0.6,0.6,t=>(  (1-Math.sin(t*PI)*0.6)*(1-t*0.45)*arg.tail_length  ),1);  
+    ;[c4,f4] = fin_a(f4_curve,-0.6,0.6,t=>(  (1-Math.sin(t*PI)*0.6)*(1-t*0.45)*arg.tail_length  ),true);
   }else if (arg.tail_type == 5){
     f4_curve = [curve0[curve0.length-2], curve1[curve1.length-2]];
     f4_curve = resample(f4_curve,f4_d);
-    ;[c4,f4] = fin_a(f4_curve,-0.6,0.6,t=>(  (1-Math.sin(t*PI)**0.4*0.55)*arg.tail_length  ),1);
+    ;[c4,f4] = fin_a(f4_curve,-0.6,0.6,t=>(  (1-Math.sin(t*PI)**0.4*0.55)*arg.tail_length  ),true);
   }
   // f4 = clip_multi(f4,trsl_poly(outline,-1,0)).false;
   bd = clip_multi(bd,trsl_poly(c4,1,0)).false;
 
   f4 = clip_multi(f4,c1).false;
 
-  let f5_curve,c5,f5=[];
+  let f5_curve: Polyline, c5: Polyline, f5: Drawing = [];
   if (arg.finlet_type == 0){
     //pass
   }else if (arg.finlet_type == 1){
@@ -2144,7 +2161,7 @@ function fish(arg){
 
   f0 = clip_multi(f0,c1).false;
 
-  let sh2 = [];
+  let sh2: Drawing = [];
   if (pattern_func){
     if (arg.scale_type > 1){
       sh2 = patternshade_shape( poly_union(outline,trsl_poly(c0,0,3)  ),3.5,pattern_func);
@@ -2155,7 +2172,7 @@ function fish(arg){
     sh2 = clip_multi(sh2,c1).false;
   }
 
-  let sh3 = [];
+  let sh3: Drawing = [];
   if (arg.pattern_type == 4){
     sh3 = smalldot_shape( poly_union(outline,trsl_poly(c0,0,5)  ), arg.pattern_scale);
     sh3 = clip_multi(sh3,c1).false;
@@ -2177,7 +2194,7 @@ function fish(arg){
   concat();
 }
 
-function reframe(polylines,pad=20,text=null){
+function reframe(polylines: Drawing, pad=20, text: string | null = null){
   
   let W = (500-pad*2);
   let H = (300-pad*2) - (text?10:0);
@@ -2195,6 +2212,7 @@ function reframe(polylines,pad=20,text=null){
       polylines[i][j] = [x,y];
     }
   }
+  if (!text) return polylines;
   let [tw,tp] = put_text(text);
   tp = tp.map(p=>scl_poly(shr_poly(p,-0.3),0.3,0.3));
   tw *= 0.3;
@@ -2202,7 +2220,7 @@ function reframe(polylines,pad=20,text=null){
   return polylines;
 }
 
-function cleanup(polylines){
+function cleanup(polylines: Drawing){
   for (let i = polylines.length-1; i>=0; i--){
     polylines[i] = approx_poly_dp(polylines[i],0.1);
     for (let j = 0; j < polylines[i].length; j++){
@@ -2215,7 +2233,7 @@ function cleanup(polylines){
       continue;
     }
     if (polylines[i].length == 2){
-      if (dist(...polylines[0],...polylines[1])<0.9){
+      if (dist(...polylines[i][0],...polylines[i][1])<0.9){
         polylines.splice(i,1);
         continue;
       }
@@ -2278,7 +2296,7 @@ function default_params(){
   }
 }
 
-function choice(opts,percs){
+function choice<T>(opts: T[], percs?: number[]){
   if (!percs){
     percs = opts.map(x=>1);
   }
@@ -2294,9 +2312,10 @@ function choice(opts,percs){
       return opts[i];
     }
   }
+  return opts[opts.length - 1];
 }
 
-function rndtri(a,b,c){
+function rndtri(a: number,b: number,c: number){
   let s0 = (b-a)/2;
   let s1 = (c-b)/2;
   let s = s0 + s1;
@@ -2427,7 +2446,7 @@ function binomen(){
   return name[0]+name.slice(1).toLowerCase();
 }
 
-let hershey_raw = {
+let hershey_raw: Record<number, string> = {
 "501":"  9I[RFJ[ RRFZ[ RMTWT",
 "502":" 24G\\KFK[ RKFTFWGXHYJYLXNWOTP RKPTPWQXRYTYWXYWZT[K[",
 "503":" 19H]ZKYIWGUFQFOGMILKKNKSLVMXOZQ[U[WZYXZV",
@@ -2483,9 +2502,9 @@ let hershey_raw = {
 "710":"  6MWRYQZR[SZRY",
 };
 
-let hershey_cache = {};
+let hershey_cache: Record<number, Glyph> = {};
 
-function compile_hershey(i){
+function compile_hershey(i: number): Glyph | undefined{
   if (hershey_cache[i]){
     return hershey_cache[i];
   }
@@ -2498,7 +2517,7 @@ function compile_hershey(i){
   var xmin = bound.charCodeAt(0)-ordR;
   var xmax = bound.charCodeAt(1)-ordR;
   var content = entry.substring(5);
-  var polylines = [[]];
+  var polylines: Drawing = [[]];
   var j  = 0;
   while (j < content.length){
     var digit = content.substring(j,j+2);
@@ -2520,10 +2539,10 @@ function compile_hershey(i){
   return data;
 }
 
-function put_text(txt){
+function put_text(txt: string): [number, Drawing]{
   let base = 500;
   let x = 0;
-  let o = [];
+  let o: Drawing = [];
   for (let i = 0; i < txt.length; i++){
     let ord = txt.charCodeAt(i);
     let idx;
@@ -2539,7 +2558,9 @@ function put_text(txt){
     }else{
       continue;
     }
-    let {xmin,xmax,polylines} = compile_hershey(idx);
+    const glyph = compile_hershey(idx);
+    if (!glyph) continue;
+    let {xmin,xmax,polylines} = glyph;
     polylines = polylines.map(p=>trsl_poly(p,x-xmin,0));
     o.push(...polylines);
     x += (xmax-xmin);
@@ -2547,7 +2568,7 @@ function put_text(txt){
   return [x,o];
 }
 
-function str_to_seed(str){
+function str_to_seed(str: string){
   let n = 1;
   for (let i = 0; i < str.length; i++){
     let x = str.charCodeAt(i)+1;
@@ -2562,46 +2583,29 @@ function str_to_seed(str){
   return n;
 }
 
-function main(seed){
-  if (seed === undefined){
-    jsr = ~~(Math.random()*10000);
-    let name = binomen();
-    seed = name;
-  }
+/** Reset all random state so a seed always identifies the same drawing. */
+export function parameters_for_seed(seed: string): FishParams {
   jsr = str_to_seed(seed);
-  let drawing = fish(generate_params());
-  return (cleanup(reframe(drawing,20,seed+'.')));
+  perlin = undefined;
+  return generate_params();
 }
 
+export function generate(seed: string, overrides: Partial<FishParams> = {}): {
+  seed: string; params: FishParams; polylines: Drawing;
+} {
+  const params = { ...parameters_for_seed(seed), ...overrides };
+  // Head construction can adjust the eye size; keep the requested parameters intact.
+  const drawing = fish({ ...params });
+  return { seed, params, polylines: cleanup(reframe(drawing, 20, seed + '.')) };
+}
 
-if (typeof module != "undefined"){
-  module.exports = {main,generate_params,default_params,fish,reframe,cleanup,draw_svg,binomen,str_to_seed};
-  if (require.main === module) {
-    let seed = undefined;
-    let format = 'svg';
-    let speed = 0.005;
-    for (let i = 2; i < process.argv.length; i++){
-      let a = process.argv[i];
-      if (a == '--seed'){
-        seed = process.argv[i+1];
-      }else if (a == '--format'){
-        format = process.argv[i+1];
-      }else if (a == '--speed'){
-        if (process.argv[i+1] > 0)
-          speed = speed / process.argv[i+1];
-      }
-    }
-    let polylines = main(seed);
-    if (format == 'svg'){
-      console.log(draw_svg(polylines));
-    }else if (format == 'json'){
-      console.log(JSON.stringify(polylines));
-    }else if (format == 'smil'){
-      console.log(draw_svg_anim(polylines,speed));
-    }else if (format == 'csv'){
-      console.log(polylines.map(x=>x.flat().join(',')).join('\n'));
-    }else if (format == 'ps'){
-      console.log(draw_ps(polylines));
-    }
+function main(seed?: string): Drawing {
+  if (seed === undefined) {
+    jsr = Math.floor(Math.random() * 10000);
+    seed = binomen();
   }
+  return generate(seed).polylines;
 }
+
+
+export { main, generate_params, default_params, fish, reframe, cleanup, draw_svg, draw_svg_anim, draw_ps, binomen, str_to_seed };
