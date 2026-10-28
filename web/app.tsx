@@ -74,6 +74,7 @@ function App() {
     applyInspiration: { type: 'action' },
     draw: { type: 'action' },
     random: { type: 'action' },
+    randomiseTraits: { type: 'action', label: 'Randomise traits' },
   }, {
     onAction(path) {
       if (path === 'draw' || path === 'applyInspiration') {
@@ -81,11 +82,12 @@ function App() {
         const next = values.seed.trim();
         if (next) setSpecimen(s => ({ seed: next, presetId: values.inspiration, revision: s.revision + 1 }));
       }
-      if (path === 'random') {
+      if (path === 'random' || path === 'randomiseTraits') {
         parameters_for_seed(crypto.randomUUID());
         const next = binomen();
-        dial.setValue('seed', next);
-        setSpecimen(s => ({ seed: next, presetId: dial.getValues().inspiration, revision: s.revision + 1 }));
+        const presetId = path === 'randomiseTraits' ? 'explorer' : dial.getValues().inspiration;
+        dial.setValues({ seed: next, inspiration: presetId });
+        setSpecimen(s => ({ seed: next, presetId, revision: s.revision + 1 }));
       }
     },
   });

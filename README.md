@@ -23,6 +23,8 @@ Choose an **Inspiration** and click **Apply Inspiration** (or Draw). There are e
 
 **Explore all traits** makes reproducible combinations from the entire catalog. **Original procedural fish** preserves the original seeded drawings. Random generates a new name using the selected inspiration. Each named inspiration keeps its anatomical family while the seed varies body proportions, fin lengths and placement, head proportions, and texture density. You can freely mix and edit every starting point, and Reset restores it.
 
+Click **Randomise traits** to immediately pick a new combination from the full catalog. It generates a new seed, selects Explore all traits, and updates the anatomy controls to match. You can edit the result, reset to that combination, or reproduce it using its seed.
+
 The expanded catalog includes six body profiles, ten surface treatments, eleven marking styles, and nine tail shapes. Smooth-edged and comb-edged scales, diamond armor, denticle-inspired ticks, and scute rows are separate from pigment markings. Combine longitudinal stripes, chevrons, reticulation, ringed spots, an ocellus, and dark-back hatching with any surface. Additional controls cover complete or incomplete lateral lines, individual fin visibility, dorsal/anal placement, two dorsals with finlets, adipose fins, a continuous eel margin, snout proportions, terminal/subterminal mouths, and chin or under-snout barbels.
 
 Download SVG, animated SVG (SMIL), JSON, CSV, or PostScript. The Export folder contains the format, animation speed, and Download action. Generation runs locally in your browser; drawings are not uploaded.
