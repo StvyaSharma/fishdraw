@@ -1,28 +1,53 @@
-import type { Drawing, Polyline } from '../fishdraw.ts';
+import type { Drawing, Polyline, Point } from '../fishdraw.ts';
 import { path, type TraitContext } from './types.ts';
+import { ink } from './organic.ts';
 
 /** Continuous median fin margin for eel-inspired silhouettes. */
-export function ribbonFin({ body, params: p }: TraitContext): Drawing {
-  const upper = path(48, t => {
-    const u = 0.2 + t * 0.8;
+export function ribbonFin(c: TraitContext): Drawing {
+  const { body, params: p, random, noise } = c;
+  const start = 0.16 + random() * 0.1;
+  const lowerEnd = 0.3 + random() * 0.1;
+  const samples = 42 + Math.floor(random() * 14);
+  const phase = random() * 20;
+  const upper = path(samples, t => {
+    const u = start + t * (1 - start);
     const pt = body.point(u, -1);
-    return [pt[0], pt[1] - Math.sin(t * Math.PI / 2) * p.dorsal_length * 0.28];
+    const height = (0.3 + noise(u * 5, phase, 30) * 0.8) * Math.sin(t * Math.PI / 2);
+    return [pt[0], pt[1] - height * p.dorsal_length * 0.45];
   });
-  const lower = path(48, t => {
-    const u = 1 - t * 0.65;
+  const lower = path(samples, t => {
+    const u = 1 - t * (1 - lowerEnd);
     const pt = body.point(u, 1);
-    return [pt[0], pt[1] + Math.cos(t * Math.PI / 2) * p.anal_length * 0.4];
+    const height = (0.35 + noise(u * 4, phase + 2, 30) * 0.8) * Math.cos(t * Math.PI / 2);
+    return [pt[0], pt[1] + height * p.anal_length * 0.55];
   });
   const end = body.point(1, 0);
+  const tip: Point = [end[0] + p.tail_length * (0.5 + random() * 0.25), end[1] + (random() - 0.5) * 8];
+  const join = path(17, t => {
+    const a = p.has_dorsal ? upper.at(-1)! : body.point(1, -1);
+    const b = p.has_anal ? lower[0] : body.point(1, 1);
+    return [(1-t)**2 * a[0] + 2*t*(1-t)*tip[0]*1.08 + t*t*b[0],
+      (1-t)**2 * a[1] + 2*t*(1-t)*tip[1] + t*t*b[1]];
+  });
   const margin: Polyline = [
     ...(p.has_dorsal ? upper : [body.point(1, -1)]),
-    [end[0] + p.tail_length * 0.65, end[1]],
+    ...join,
     ...(p.has_anal ? lower : [body.point(1, 1)]),
   ];
-  const strokes = [margin];
-  for (let i = 2; i < upper.length; i += 2) {
-    if (p.has_dorsal) strokes.push([body.point(0.2 + i / 47 * 0.8, -1), upper[i]]);
-    if (p.has_anal) strokes.push([body.point(1 - i / 47 * 0.65, 1), lower[i]]);
+  const strokes: Drawing = [ink(c, margin, 1.2)];
+  for (let i = 2; i < samples; i++) {
+    if (random() < 0.23) continue;
+    const t = i / (samples - 1);
+    for (const [visible, root, edge] of [
+      [p.has_dorsal, body.point(start + t * (1 - start), -1), upper[i]],
+      [p.has_anal, body.point(1 - t * (1 - lowerEnd), 1), lower[i]],
+    ] as const) {
+      if (!visible) continue;
+      const length = 0.5 + random() * 0.45;
+      const lean = (random() - 0.5) * 5;
+      strokes.push(ink(c, path(8, s => [root[0] + (edge[0] - root[0]) * s * length + Math.sin(s * Math.PI) * lean,
+        root[1] + (edge[1] - root[1]) * s * length]), 0.6));
+    }
   }
   return strokes;
 }

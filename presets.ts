@@ -125,13 +125,47 @@ export function parameters_for_preset(seed: string, presetId = 'procedural'): Fi
   if (presetId === 'explorer') return explorationParameters(seed);
   const preset = fishPresets.find(p => p.id === presetId);
   if (!preset) throw new Error(`Unknown fish inspiration: ${presetId}.`);
-  return {
+  const params: FishParams = {
     ...default_params(),
     has_moustache: 0, has_beard: 0, has_teeth: 0, jaw_open: 0.15,
     head_texture_amount: 25, dorsal_texture_type: 0, wing_length: 70,
     pelvic_length: 45, anal_length: 40, finlet_type: 0, pattern_type: 0,
     ...preset.params,
   };
+  // A preset selects anatomical families, not a frozen specimen. Separate
+  // seeded sampling changes proportions without adding inappropriate anatomy.
+  let state = str_to_seed(`${seed}:inspiration:${presetId}`) || 0x5eed;
+  function random() {
+    state ^= state << 13; state ^= state >>> 17; state ^= state << 5;
+    return (state >>> 0) / 4294967296;
+  }
+  const triangular = () => random() + random() - 1;
+  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+  const fields: readonly [keyof FishParams, number, number, number][] = [
+    ['body_length', 0.24, 200, 520], ['body_height', 0.38, 28, 170],
+    ['dorsal_length', 0.4, 10, 180], ['wing_length', 0.4, 20, 350],
+    ['pelvic_length', 0.35, 10, 140], ['anal_length', 0.4, 10, 90],
+    ['tail_length', 0.32, 30, 180], ['head_length', 0.3, 10, 100],
+    ['scale_scale', 0.35, 0.65, 2], ['pattern_scale', 0.45, 0.5, 2.5],
+    ['eye_size', 0.3, 8, 28], ['jaw_size', 0.15, 0.7, 1.4],
+    ['moustache_length', 0.4, 10, 60], ['beard_length', 0.4, 10, 60],
+  ];
+  for (const [key, amount, min, max] of fields) {
+    params[key] = clamp(params[key] * (1 + triangular() * amount), min, max);
+  }
+  params.beard_length = Math.round(params.beard_length);
+  params.moustache_length = Math.round(params.moustache_length);
+  params.body_curve_amount = clamp(params.body_curve_amount + triangular() * 0.15, 0.5, 0.98);
+  params.nose_height = clamp(params.nose_height + triangular() * params.body_height * 0.12, -50, 35);
+  params.jaw_open = clamp(params.jaw_open + triangular() * 0.16, 0.03, 0.45);
+  params.head_texture_amount = Math.round(params.head_texture_amount * (0.5 + random()));
+  const dorsalSpan = params.dorsal_end - params.dorsal_start;
+  params.dorsal_start = Math.round(clamp(params.dorsal_start + triangular() * 3, 6, 24));
+  params.dorsal_end = Math.round(clamp(params.dorsal_start + dorsalSpan + triangular() * 3, params.dorsal_start + 3, 31));
+  const analSpan = params.anal_end - params.anal_start;
+  params.anal_start = Math.round(clamp(params.anal_start + triangular() * 2, 14, 25));
+  params.anal_end = Math.round(clamp(params.anal_start + analSpan + triangular() * 2, params.anal_start + 3, 31));
+  return params;
 }
 
 export function generate_preset(seed: string, presetId: string, overrides: Partial<FishParams> = {}) {

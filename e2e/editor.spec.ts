@@ -1,10 +1,11 @@
 import { expect, test, type Locator } from '@playwright/test';
-import { fishInspirations, generate_preset } from '../presets.ts';
+import { fishInspirations, generate_preset, parameters_for_preset } from '../presets.ts';
+import { binomen, parameters_for_seed } from '../fishdraw.ts';
 import { serialize } from '../formats.ts';
 
-async function expectPreset(drawing: Locator, presetId: string) {
+async function expectPreset(drawing: Locator, presetId: string, seed = 'Biggus fishus') {
   const svg = decodeURIComponent((await drawing.getAttribute('src'))!.split(',')[1]);
-  const expected = serialize(generate_preset('Biggus fishus', presetId).polylines, 'svg');
+  const expected = serialize(generate_preset(seed, presetId).polylines, 'svg');
   const strokes = (value: string) => [...value.matchAll(/\nM ([^\n]+)/g)].map(m => m[1].trim().split(/\s+/).map(Number));
   const actualLines = strokes(svg);
   const expectedLines = strokes(expected);
@@ -91,6 +92,53 @@ test('DialKit controls, seeds, reset, and exports work in production', async ({ 
   await expect(drawing).not.toHaveAttribute('alt', 'Procedural fish drawing named Testus piscis');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('editor.png'), fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test('randomise traits picks a new combination and keeps controls, reset, and export in sync', async ({ page }) => {
+  const uuids = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'];
+  await page.addInitScript(ids => {
+    let index = 0;
+    Object.defineProperty(crypto, 'randomUUID', { value: () => ids[index++] });
+  }, uuids);
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  const drawing = page.getByRole('img', { name: /Procedural fish drawing/ });
+  await page.getByText('Inspiration', { exact: true }).click();
+  await page.getByRole('option', { name: 'Florida gar', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply Inspiration', exact: true }).click();
+  for (const uuid of uuids) {
+    const before = await drawing.getAttribute('src');
+    parameters_for_seed(uuid);
+    const seed = binomen();
+    await page.getByRole('button', { name: 'Randomise traits', exact: true }).click();
+    await expect(drawing).toHaveAttribute('alt', `Procedural fish drawing named ${seed}`);
+    await expect(drawing).not.toHaveAttribute('src', before!);
+    await expect(page.getByRole('textbox', { name: 'Seed', exact: true })).toHaveValue(seed);
+    await expect(page.getByText('Explore all traits', { exact: true })).toBeVisible();
+    await expectPreset(drawing, 'explorer', seed);
+    const baseline = await drawing.getAttribute('src');
+    const slider = page.getByRole('slider').first();
+    expect(Number(await slider.getAttribute('aria-valuenow'))).toBeCloseTo(parameters_for_preset(seed, 'explorer').body_length, 5);
+    await slider.focus();
+    await slider.press('ArrowRight');
+    await expect(drawing).not.toHaveAttribute('src', baseline!);
+    await page.getByRole('button', { name: 'Reset', exact: true }).click();
+    await expect(drawing).toHaveAttribute('src', baseline!);
+    await page.getByRole('button', { name: 'Draw', exact: true }).click();
+    await expect(drawing).toHaveAttribute('src', baseline!);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+  }
+  const preview = await drawing.getAttribute('src');
+  await page.getByText('Export', { exact: true }).click();
+  await page.getByText('Format', { exact: true }).click();
+  await page.getByRole('option', { name: /^json$/i }).click();
+  const pending = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download', exact: true }).click();
+  const download = await pending;
+  const polylines = await Bun.file((await download.path())!).json();
+  expect(preview).toBe(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(serialize(polylines, 'svg'))}`);
   expect(errors).toEqual([]);
 });
 

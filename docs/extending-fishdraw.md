@@ -10,6 +10,7 @@ The engine produces `Drawing`: an ordered array of 2D pen strokes. Shapes, surfa
 - `traits/tails.ts`: additional tail outlines and ray strokes.
 - `traits/anatomy.ts`: fin arrangement metadata and continuous fin margins.
 - `traits/types.ts`: renderer interfaces and body-relative geometry.
+- `traits/organic.ts`: continuous surface warping, sampled pen drift, and projected surface coordinates.
 - `traits/index.ts`: catalog, lookup, and per-call extension validation.
 - `presets.ts`: coherent inspiration definitions and seeded exploration.
 - `fishdraw.ts`: seeded randomness, original detail renderers, occlusion, framing, and cleanup.
@@ -31,6 +32,8 @@ Surface, marking, and tail renderers receive `TraitContext`:
 Surface and marking renderers return strokes. The engine clips them to the trunk, then removes strokes hidden by the head and visible pectoral fin. A tail renderer returns `{ outline, strokes }`; its outline is also used for occlusion. Body shapes receive `{ params, noise }` and return `[top, bottom]`, with **32 corresponding finite 2D points per curve**, ordered from trunk front to tail base. Fin anchors use these sampling indices.
 
 Keep renderers synchronous and return fresh arrays: framing and cleanup mutate the generated drawing. Avoid unbounded work as parameters increase. Inspect strokes at both the largest and smallest body depths, and keep dense skin treatments legible beneath pigment. `scale_scale` and `pattern_scale` increase feature size and reduce density; they do not change anatomy.
+
+Match the original generator's variation at several levels: specimen proportions, feature spacing and size, coherent deformation, incomplete strokes, and uneven engraving density. Use continuous noise to move neighboring features together; independently jittering every vertex creates scratches. `warp` and `ink` in `organic.ts` implement the shared field and fine pen drift. Scales and reticulated cells use drawing-space coordinates before clipping so their size stays consistent near the tail; mapping an entire regular UV grid onto a thin peduncle piles strokes into a dark knot. Use body-relative coordinates for anatomical anchors such as scute rows, fin roots, and eye spots.
 
 ## Local extensions
 
@@ -62,6 +65,8 @@ IDs and keys must be unique within their category, including the built-ins. Inva
 
 Add a `FishPreset` to `fishPresets` with an ID, label, short description, primary source URL, and parameter overrides. It automatically appears in the editor and CLI. Use `parameters_for_preset` or `generate_preset` to resolve it. Both use a conservative baseline so random teeth, barbels, or extra fins do not leak into named inspirations.
 
+Preset values are centers for seeded variation, not fixed specimens. The sampler changes numeric proportions and fin origins within editor ranges while preserving discrete anatomical choices. A seed must produce the same starting parameters after switching away and back. Explicit overrides are applied after sampling.
+
 Check the combinations against [the research](fish-morphology.md). In particular:
 
 - Scute rows are distinct from ganoid diamond scales.
@@ -74,3 +79,5 @@ Check the combinations against [the research](fish-morphology.md). In particular
 ## Verification
 
 Run `bun run check`. Catalog tests iterate all built-ins, so a newly registered renderer gets finite-coordinate, canvas-bound, and repeatability checks. Inspiration tests exercise small/shallow and large/deep bodies. Extension tests verify call isolation and collision handling. Browser tests verify desktop/mobile controls, preset resets, and preview/export equality. Preserve the original regression fixtures when adding opt-in traits.
+
+`tests/variation.test.ts` also fixes the body and parameters while changing only the seeded random/noise sources. This catches a renderer that draws an identical stamp for every seed, even when noise elsewhere makes the complete fish differ. It checks variation in preset proportions separately. Review several seeds visually as well; passing a variation test does not establish drawing quality.
