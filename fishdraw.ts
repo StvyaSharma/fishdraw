@@ -1,3 +1,8 @@
+import { resolveTraits, traitById, type FishTraitExtensions } from './traits/index.ts';
+import { bodyFrame, type TraitContext } from './traits/types.ts';
+import { lateralLine, ocellusMask } from './traits/markings.ts';
+import { ribbonFin } from './traits/anatomy.ts';
+
 /** A drawing consists of ordered, two-dimensional pen strokes. */
 export type Point = [number, number];
 export type Polyline = Point[];
@@ -1816,9 +1821,10 @@ function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y
     ey = y0*0.5+y1*0.5 + Math.sin(ang)*arg.eye_size;
   }
 
-  let jaw_pt0 = curve1[18-arg.mouth_size];
-  let jaw_l = dist(...jaw_pt0,...curve1[18])*arg.jaw_size;
-  let jaw_ang0 = Math.atan2(curve1[18][1]-jaw_pt0[1],curve1[18][0]-jaw_pt0[0]);
+  const mouth_tip = arg.mouth_position === 1 ? 14 : 18;
+  let jaw_pt0 = curve1[mouth_tip-arg.mouth_size];
+  let jaw_l = dist(...jaw_pt0,...curve1[mouth_tip])*arg.jaw_size;
+  let jaw_ang0 = Math.atan2(curve1[mouth_tip][1]-jaw_pt0[1],curve1[mouth_tip][0]-jaw_pt0[0]);
   let jaw_ang =jaw_ang0- (arg.has_teeth*0.5+0.5)*arg.jaw_open*PI/4;
   let jaw_pt1: Point = [
     jaw_pt0[0]+Math.cos(jaw_ang)*jaw_l,
@@ -1830,11 +1836,11 @@ function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y
 
   let inlines = clip(inline,eye0).false;
 
-  let lip0 = fish_lip(...jaw_pt0,...curve1[18],3);
+  let lip0 = fish_lip(...jaw_pt0,...curve1[mouth_tip],3);
 
   let lip1 = fish_lip(...jaw_pt0,...jaw_pt1,3);
 
-  let [jc,jaw] = fish_jaw(...curve1[15-arg.mouth_size],...jaw_pt0,...jaw_pt1);
+  let [jc,jaw] = fish_jaw(...curve1[Math.max(0,mouth_tip-3-arg.mouth_size)],...jaw_pt0,...jaw_pt1);
 
   jaw = clip_multi(jaw,lip1).false;
   jaw = clip_multi(jaw,outline).false;
@@ -1842,11 +1848,16 @@ function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y
   let teeth0s: Drawing = [];
   let teeth1s: Drawing = [];
   if (arg.has_teeth){
-    let teeth0 = fish_teeth(...jaw_pt0,...curve1[18],arg.teeth_length,-1,arg.teeth_space);
+    let teeth0 = fish_teeth(...jaw_pt0,...curve1[mouth_tip],arg.teeth_length,-1,arg.teeth_space);
     let teeth1 = fish_teeth(...jaw_pt0,...jaw_pt1,    arg.teeth_length,1,arg.teeth_space);
 
     teeth0s = clip_multi(teeth0,lip0).false;
     teeth1s = clip_multi(teeth1,lip1).false;
+    // On the new narrow profiles, closed jaws can otherwise leave floating teeth.
+    if (arg.body_curve_type >= 2) {
+      teeth0s = clip_multi(teeth0s, jc).true;
+      teeth1s = clip_multi(teeth1s, jc).true;
+    }
   }
 
   let olines = clip(outline,lip0).false;
@@ -1877,7 +1888,11 @@ function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y
     bbs.push(bb0);
   }
 
-  if (arg.has_beard){
+  if (arg.has_beard && arg.barbel_type === 1){
+    for (let i = 0; i < 4; i++) {
+      bbs.push(barbel(...curve1[15+i], Math.round(arg.beard_length * (0.75+i*0.08)), PI*0.55 + i*0.08));
+    }
+  }else if (arg.has_beard){
     let jaw_pt;
     if (jaw[0] && jaw[0].length){
       jaw_pt = jaw[0][~~(jaw[0].length/2)];
@@ -1894,7 +1909,12 @@ function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y
     bbs.push(bb1,...bb2c,...bb3c);
   }
 
-  let outlinel: Polyline = [[0,0],[curve0[curve0.length-1][0],0],curve0[curve0.length-1],...curve2,curve1[0],[curve1[0][0],300],[0,300]];
+  // Long/deep profiles extend beyond the old 0..450 by 0..300 construction area.
+  // Extend the head mask so trunk strokes cannot reappear in front of the snout.
+  const mask_left = Math.min(0, 225-arg.body_length/2-1, x0-1);
+  const mask_top = Math.min(0, 150-arg.body_height-1);
+  const mask_bottom = Math.max(300, 150+arg.body_height+1);
+  let outlinel: Polyline = [[mask_left,mask_top],[curve0[curve0.length-1][0],mask_top],curve0[curve0.length-1],...curve2,curve1[0],[curve1[0][0],mask_bottom],[mask_left,mask_bottom]];
 
   
   return [outlinel,[
@@ -1906,49 +1926,22 @@ function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y
     ...jaw]];
 }
 
-function bean(x: number){
-  return Math.pow(0.25-Math.pow(x-0.5,2),0.5)*(2.6+2.4*Math.pow(x,1.5))*0.542;
-}
-
 function deviate(n: number){
   return rand()*2*n-n;
 }
 
 
-function fish(arg: FishParams){
-  let n = 32;
-  let curve0: Polyline = [];
-  let curve1: Polyline = [];
-  if (arg.body_curve_type == 0){
-    let s = arg.body_curve_amount;
-    for (let i = 0; i < n; i++){
-      let t = i/(n-1);
-      
-      let x =  225 + (t-0.5)*arg.body_length;
-      let y = 150 - (Math.sin(t*PI)*lerp(0.5,1,noise(t*2,1))*s+(1-s))*arg.body_height;
-      curve0.push([x,y]);
-    }
-    for (let i = 0; i < n; i++){
-      let t = i/(n-1);
-      let x =  225 + (t-0.5)*arg.body_length;
-      let y = 150 + (Math.sin(t*PI)*lerp(0.5,1,noise(t*2,2))*s+(1-s))*arg.body_height;
-      curve1.push([x,y]);
-    }
-  }else if (arg.body_curve_type == 1){
-    for (let i = 0; i < n; i++){
-      let t = i/(n-1);
-      
-      let x = 225 + (t-0.5)*arg.body_length;
-      let y = 150-lerp(1-arg.body_curve_amount,1,lerp(0,1,noise(t*1.2,1))*bean(1-t))*arg.body_height;
-      curve0.push([x,y]);
-    }
-    for (let i = 0; i < n; i++){
-      let t = i/(n-1);
-      let x = 225 + (t-0.5)*arg.body_length;
-      let y = 150+lerp(1-arg.body_curve_amount,1,lerp(0,1,noise(t*1.2,2))*bean(1-t))*arg.body_height;
-      curve1.push([x,y]);
-    }
+function fish(arg: FishParams, extensions: FishTraitExtensions = {}){
+  const traits = resolveTraits(extensions);
+  const shape = traitById(traits.shapes, arg.body_curve_type);
+  const texture = traitById(traits.textures, arg.scale_type);
+  const marking = traitById(traits.markings, arg.pattern_type);
+  const tail = traitById(traits.tails, arg.tail_type);
+  const [curve0, curve1] = shape.render({ params: arg, noise });
+  if ([curve0, curve1].some(curve => curve.length !== 32 || curve.some(point => point.length !== 2 || !point.every(Number.isFinite)))) {
+    throw new Error('A body shape must return two curves of 32 finite 2D points.');
   }
+  const context: TraitContext = { params: arg, body: bodyFrame(curve0, curve1), random: rand, noise };
   let outline = curve0.concat(curve1.slice().reverse());
   let sh = shade_shape(outline,8,-12,-12);
 
@@ -1976,7 +1969,9 @@ function fish(arg: FishParams){
   }
 
   let bd: Drawing = [];
-  if (arg.scale_type == 0){
+  if (texture.render){
+    bd = [curve0, curve1.slice().reverse(), ...clip_multi(texture.render(context), outline).true];
+  }else if (arg.scale_type == 0){
     bd = fish_body_a(curve0,curve1,arg.scale_scale,pattern_func);
   }else if (arg.scale_type == 1){
     bd = fish_body_b(curve0,curve1,arg.scale_scale,pattern_func);
@@ -1999,7 +1994,7 @@ function fish(arg: FishParams){
     f0_cv = arg.dorsal_length/8;
     f0_func = t=>(  arg.dorsal_length* ((Math.pow(t-1,2))*0.5 + (1-t)*0.5)  );
   }
-  let f0_curve,c0,f0;
+  let f0_curve: Polyline, c0: Polyline, f0: Drawing;
   if (arg.dorsal_texture_type == 0){
     f0_curve = resample(curve0.slice(arg.dorsal_start,arg.dorsal_end),5);
     ;[c0,f0] = fin_a(f0_curve,f0_a0,f0_a1,f0_func,false,f0_cv,0);
@@ -2033,7 +2028,7 @@ function fish(arg: FishParams){
     f1_func = t=>(  arg.wing_length*(1-t*0.95)  ); 
   }
   
-  let c1,f1;
+  let c1: Polyline, f1: Drawing;
   if (arg.wing_texture_type == 0){
     f1_curve = resample(f1_curve,1.5);
     ;[c1,f1] = fin_a(f1_curve,f1_a0,f1_a1,f1_func,true,f1_cv,0,f1_soft);
@@ -2041,6 +2036,7 @@ function fish(arg: FishParams){
     f1_curve = resample(f1_curve,4);
     ;[c1,f1] = fin_b(f1_curve,f1_a0,f1_a1,f1_func,0.3);
   }
+  if (!arg.has_pectoral) { c1 = []; f1 = []; }
   bd = clip_multi(bd,c1).false;
 
 
@@ -2056,7 +2052,7 @@ function fish(arg: FishParams){
     f2_a1 = -0.3 + deviate(0.05);;
     f2_func = t=>( (t*0.5+0.5)*arg.pelvic_length  );
   }
-  let c2,f2;
+  let c2: Polyline, f2: Drawing;
   if (arg.pelvic_texture_type == 0){
     f2_curve = resample(curve1.slice(arg.pelvic_start,arg.pelvic_end).reverse(),arg.pelvic_type?2:5);
     ;[c2,f2] = fin_a(f2_curve,f2_a0,f2_a1,f2_func);
@@ -2078,7 +2074,7 @@ function fish(arg: FishParams){
     f3_a1 = -0.4 + deviate(0.05);;
     f3_func = t=>(  arg.anal_length* (t*t*0.8+0.2)  );
   }
-  let c3,f3;
+  let c3: Polyline, f3: Drawing;
   if (arg.anal_texture_type == 0){
     f3_curve = resample(curve1.slice(arg.anal_start,arg.anal_end).reverse(),5);
     ;[c3,f3] = fin_a(f3_curve,f3_a0,f3_a1,f3_func);
@@ -2094,7 +2090,11 @@ function fish(arg: FishParams){
   f4_n = Math.max(Math.min(f4_n,20),8);
   let f4_d = f4_r/f4_n;
   // console.log(f4_n,f4_d);
-  if (arg.tail_type == 0){
+  if (tail.render){
+    const rendered = tail.render(context);
+    c4 = rendered.outline;
+    f4 = rendered.strokes;
+  }else if (arg.tail_type == 0){
     f4_curve = [curve0[curve0.length-1], curve1[curve1.length-1]];
     f4_curve = resample(f4_curve,f4_d);
     ;[c4,f4] = fin_a(f4_curve,-0.6,0.6,t=>(  (75-(10+noise(t*3)*10)*Math.sin(3*t*PI-PI))/75*arg.tail_length  ),true);
@@ -2126,7 +2126,20 @@ function fish(arg: FishParams){
   f4 = clip_multi(f4,c1).false;
 
   let f5_curve: Polyline, c5: Polyline, f5: Drawing = [];
-  if (arg.finlet_type == 0){
+  if (arg.finlet_type == 5){
+    f5 = ribbonFin(context);
+    f0 = []; f3 = []; f4 = [];
+  }else if (arg.finlet_type == 4){
+    const secondStart = Math.min(22, arg.dorsal_end + 1);
+    if (arg.has_dorsal) {
+      const second = resample(curve0.slice(secondStart, secondStart + 4), 4);
+      if (second.length > 2) f5.push(...fin_a(second, 0.25, 0.2, t => (1 - t * 0.8) * arg.dorsal_length * 0.6)[1]);
+      const upper = resample(curve0.slice(secondStart + 4, -1), 3);
+      if (upper.length > 2) f5.push(...finlet(upper, 9)[1]);
+    }
+    const lower = resample(curve1.slice(Math.max(24, arg.anal_end), -1).reverse(), 3);
+    if (arg.has_anal && lower.length > 2) f5.push(...finlet(lower, 9, -1)[1]);
+  }else if (arg.finlet_type == 0){
     //pass
   }else if (arg.finlet_type == 1){
     f5_curve = resample(curve0.slice(arg.dorsal_end,-2),5);
@@ -2146,6 +2159,9 @@ function fish(arg: FishParams){
     }
     
   }
+  if (!arg.has_dorsal) { f0 = []; c0 = []; }
+  if (!arg.has_pelvic) f2 = [];
+  if (!arg.has_anal) f3 = [];
   let cf,fh;
   if (arg.neck_type == 0){
     ;[cf,fh] = fish_head(50-arg.head_length,150+arg.nose_height,...curve0[6],...curve1[5],arg);
@@ -2163,10 +2179,10 @@ function fish(arg: FishParams){
 
   let sh2: Drawing = [];
   if (pattern_func){
-    if (arg.scale_type > 1){
+    if (arg.scale_type > 1 && arg.has_dorsal && arg.finlet_type !== 5){
       sh2 = patternshade_shape( poly_union(outline,trsl_poly(c0,0,3)  ),3.5,pattern_func);
     }else{
-      sh2 = patternshade_shape( c0,4.5,pattern_func);
+      sh2 = patternshade_shape(arg.has_dorsal && arg.finlet_type !== 5 ? c0 : outline,4.5,pattern_func);
     }
     sh2 = clip_multi(sh2,cf).false;
     sh2 = clip_multi(sh2,c1).false;
@@ -2174,10 +2190,26 @@ function fish(arg: FishParams){
 
   let sh3: Drawing = [];
   if (arg.pattern_type == 4){
-    sh3 = smalldot_shape( poly_union(outline,trsl_poly(c0,0,5)  ), arg.pattern_scale);
+    sh3 = smalldot_shape(arg.has_dorsal && arg.finlet_type !== 5 ? poly_union(outline,trsl_poly(c0,0,5)) : outline, arg.pattern_scale);
     sh3 = clip_multi(sh3,c1).false;
     sh3 = clip_multi(sh3,cf).false;
   }
+
+  let details: Drawing = [];
+  if (marking.render && arg.pattern_type !== 8) details.push(...marking.render(context));
+  details.push(...lateralLine(context));
+  if (arg.has_ocellus || arg.pattern_type === 8) {
+    const mask = ocellusMask(context);
+    bd = clip_multi(bd, mask).false;
+    sh = clip_multi(sh, mask).false;
+    sh2 = clip_multi(sh2, mask).false;
+    sh3 = clip_multi(sh3, mask).false;
+    details = clip_multi(details, mask).false;
+    details.push(...traitById(traits.markings, 8).render!(context));
+  }
+  details = clip_multi(details, outline).true;
+  details = clip_multi(details, cf).false;
+  details = clip_multi(details, c1).false;
 
   return bd.
   concat(f0).
@@ -2190,6 +2222,7 @@ function fish(arg: FishParams){
   concat(sh).
   concat(sh2).
   concat(sh3).
+  concat(details).
   // concat([cf]).
   concat();
 }
@@ -2244,6 +2277,14 @@ function cleanup(polylines: Drawing){
 
 function default_params(){
   return {
+    has_dorsal:1,
+    has_pectoral:1,
+    has_pelvic:1,
+    has_anal:1,
+    lateral_line_type:0,
+    has_ocellus:0,
+    mouth_position:0,
+    barbel_type:0,
     body_curve_type:0,
     body_curve_amount:0.85,
     body_length:350,
@@ -2590,12 +2631,12 @@ export function parameters_for_seed(seed: string): FishParams {
   return generate_params();
 }
 
-export function generate(seed: string, overrides: Partial<FishParams> = {}): {
+export function generate(seed: string, overrides: Partial<FishParams> = {}, extensions: FishTraitExtensions = {}): {
   seed: string; params: FishParams; polylines: Drawing;
 } {
   const params = { ...parameters_for_seed(seed), ...overrides };
   // Head construction can adjust the eye size; keep the requested parameters intact.
-  const drawing = fish({ ...params });
+  const drawing = fish({ ...params }, extensions);
   return { seed, params, polylines: cleanup(reframe(drawing, 20, seed + '.')) };
 }
 

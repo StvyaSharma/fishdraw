@@ -1,4 +1,22 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
+import { fishInspirations, generate_preset } from '../presets.ts';
+import { serialize } from '../formats.ts';
+
+async function expectPreset(drawing: Locator, presetId: string) {
+  const svg = decodeURIComponent((await drawing.getAttribute('src'))!.split(',')[1]);
+  const expected = serialize(generate_preset('Biggus fishus', presetId).polylines, 'svg');
+  const strokes = (value: string) => [...value.matchAll(/\nM ([^\n]+)/g)].map(m => m[1].trim().split(/\s+/).map(Number));
+  const actualLines = strokes(svg);
+  const expectedLines = strokes(expected);
+  // Different JS engines can simplify collinear points differently and drop a
+  // different tiny stroke at the 0.9-unit cleanup threshold. Compare silhouette
+  // endpoints and overall density here; exact browser preview/export equality
+  // is checked below, and repeatability is tested within the generator runtime.
+  expect(Math.abs(actualLines.length - expectedLines.length), presetId).toBeLessThanOrEqual(2);
+  for (let i = 0; i < 2; i++) {
+    for (const j of [0, 1, -2, -1]) expect(actualLines[i].at(j), `${presetId} stroke ${i}`).toBeCloseTo(expectedLines[i].at(j)!, 1);
+  }
+}
 
 test('DialKit controls, seeds, reset, and exports work in production', async ({ page }, testInfo) => {
   const errors: string[] = [];
@@ -73,5 +91,56 @@ test('DialKit controls, seeds, reset, and exports work in production', async ({ 
   await expect(drawing).not.toHaveAttribute('alt', 'Procedural fish drawing named Testus piscis');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('editor.png'), fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test('inspirations, independent traits, reset, and export stay in sync', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  const drawing = page.getByRole('img', { name: /Procedural fish drawing/ });
+  for (const preset of fishInspirations.filter(p => p.id !== 'procedural')) {
+    const before = await drawing.getAttribute('src');
+    await page.getByText('Inspiration', { exact: true }).click();
+    await page.getByRole('option', { name: preset.label, exact: true }).click();
+    await page.getByRole('button', { name: 'Apply Inspiration', exact: true }).click();
+    await expect(drawing).not.toHaveAttribute('src', before!);
+    await expectPreset(drawing, preset.id);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+  }
+  const gar = await drawing.getAttribute('src');
+  for (const [label, option] of [
+    ['Scales', 'Smooth / no scale strokes'],
+    ['Pattern', 'Ringed spots'],
+    ['Lateral Line', 'Complete'],
+    ['Tail Shape', 'Truncate · flat edge'],
+  ]) {
+    const before = await drawing.getAttribute('src');
+    await page.getByText(label, { exact: true }).click();
+    await page.getByRole('option', { name: option, exact: true }).click();
+    await expect(drawing).not.toHaveAttribute('src', before!);
+  }
+  const customized = await drawing.getAttribute('src');
+  await page.getByText('Export', { exact: true }).click();
+  await page.getByText('Format', { exact: true }).click();
+  await page.getByRole('option', { name: /^json$/i }).click();
+  const pending = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download', exact: true }).click();
+  const downloaded = await pending;
+  const content = await Bun.file((await downloaded.path())!).text();
+  const expectedSvg = serialize(JSON.parse(content), 'svg');
+  expect(customized).toBe(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(expectedSvg)}`);
+
+  await page.getByRole('button', { name: 'Reset', exact: true }).click();
+  await expect(drawing).toHaveAttribute('src', gar!);
+  // Drawing again also discards edits and restores the chosen inspiration.
+  await page.getByRole('button', { name: 'Draw', exact: true }).click();
+  await expect(drawing).toHaveAttribute('src', gar!);
+  await page.getByText('Inspiration', { exact: true }).click();
+  await page.getByRole('option', { name: 'Original procedural fish', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply Inspiration', exact: true }).click();
+  await expect(drawing).not.toHaveAttribute('src', gar!);
+  await expectPreset(drawing, 'procedural');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });

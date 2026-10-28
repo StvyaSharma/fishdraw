@@ -5,7 +5,9 @@
   "type": "module",
   "module": "./fishdraw.ts",
   "exports": {
-    ".": "./fishdraw.ts"
+    ".": "./fishdraw.ts",
+    "./traits": "./traits/index.ts",
+    "./presets": "./presets.ts"
   },
   "engines": {
     "bun": ">=1.3.0"
