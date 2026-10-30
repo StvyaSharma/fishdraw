@@ -4,7 +4,7 @@ import { fishPresets, generate_preset, parameters_for_preset } from '../presets.
 import { fishTraits, resolveTraits, type FishTraitExtensions } from '../traits/index.ts';
 import { bodyFrame } from '../traits/types.ts';
 import { run } from '../cli.ts';
-import { controlConfig } from '../web/controls.ts';
+import { surfaceConfig } from '../web/controls.ts';
 
 function expectDrawing(drawing: Drawing) {
   expect(drawing.length).toBeGreaterThan(0);
@@ -94,7 +94,7 @@ test('custom rendering extensions work per call without affecting built-ins', ()
   expect(() => generate('Extension fish', { pattern_type: 100 })).toThrow('Unknown trait ID');
   expect(generate('Extension fish')).toEqual(baseline);
   expect(resolveTraits(custom).markings.at(-1)?.key).toBe('test-line');
-  expect(controlConfig(extended.params, custom).texture.pattern.options.at(-1)?.value).toBe('100');
+  expect(surfaceConfig(extended.params, custom).markings.pattern.options.at(-1)?.value).toBe('100');
   expect(() => resolveTraits({ markings: [{ ...custom.markings![0], id: 0 }] })).toThrow('already registered');
 });
 
