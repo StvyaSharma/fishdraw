@@ -203,3 +203,50 @@ test('inspirations, independent traits, reset, and export stay in sync', async (
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test('watercolour renderer paints with p5.brush and exports PNG', async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await expect(page.getByRole('img', { name: /Procedural fish drawing/ })).toBeVisible();
+  await page.getByText('Renderer', { exact: true }).click();
+  await page.getByRole('option', { name: 'Watercolour · p5.brush', exact: true }).click();
+  const painting = page.getByRole('img', { name: /Watercolour fish painting named Biggus fishus/ });
+  await expect(painting).toBeVisible();
+  await expect(page.locator('#root > img')).toHaveCount(0);
+  // Painted, not blank: sample many distinct colours from the WebGL canvas.
+  await expect.poll(() => painting.evaluate((canvas: HTMLCanvasElement) => {
+    const copy = document.createElement('canvas');
+    copy.width = canvas.width; copy.height = canvas.height;
+    const ctx = copy.getContext('2d')!;
+    ctx.drawImage(canvas, 0, 0);
+    const data = ctx.getImageData(0, 0, copy.width, copy.height).data;
+    const colours = new Set<number>();
+    for (let i = 0; i < data.length; i += 4 * 97) colours.add((data[i] >> 3) << 10 | (data[i + 1] >> 3) << 5 | data[i + 2] >> 3);
+    return colours.size;
+  })).toBeGreaterThan(40);
+  await page.screenshot({ path: testInfo.outputPath('watercolour.png') });
+  const slider = page.getByRole('slider').first();
+  await slider.focus();
+  await slider.press('ArrowRight');
+  await expect(painting).toBeVisible();
+  // The renderer choice survives drawing a new seed.
+  await page.getByRole('textbox', { name: 'Seed', exact: true }).fill('Testus piscis');
+  await page.getByRole('button', { name: 'Draw', exact: true }).click();
+  await expect(page.getByRole('img', { name: /Watercolour fish painting named Testus piscis/ })).toBeVisible();
+
+  await page.getByText('Export', { exact: true }).click();
+  await page.getByText('Format', { exact: true }).click();
+  await page.getByRole('option', { name: /^png$/i }).click();
+  const pending = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download', exact: true }).click();
+  const download = await pending;
+  expect(download.suggestedFilename()).toBe('Testus-piscis.png');
+  const bytes = new Uint8Array(await Bun.file((await download.path())!).arrayBuffer());
+  expect([...bytes.slice(1, 4)].map(b => String.fromCharCode(b)).join('')).toBe('PNG');
+
+  await page.getByText('Renderer', { exact: true }).click();
+  await page.getByRole('option', { name: 'Engraved · SVG hatching', exact: true }).click();
+  await expect(page.getByRole('img', { name: /Procedural fish drawing/ })).toBeVisible();
+  expect(errors).toEqual([]);
+});

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { generate, main, parameters_for_seed } from '../fishdraw.ts';
 import { serialize } from '../formats.ts';
-import { colorPatterns, paletteFamilies, pigmentCells, colorRandom } from '../traits/color.ts';
+import { colorPatterns, contours, paletteFamilies, pigmentCells, colorRandom } from '../traits/color.ts';
 
 test('colour never moves a line-work stroke', () => {
   const mono = generate('Pomacanthus rex');
@@ -69,4 +69,33 @@ test('coloured output keeps pens separate in every format', () => {
   expect(json[0]).toHaveProperty('color');
   expect(serialize(fish.polylines, 'csv', 1, fish.colors).split('\n')[0]).toStartWith('#');
   expect(serialize(fish.polylines, 'smil', 1, fish.colors)).toContain(`stroke="${fish.colors![0]}"`);
+});
+
+test('contours trace closed loops around each region above the level', () => {
+  const box = { x0: 0, y0: 0, x1: 100, y1: 50 };
+  const loops = contours(box, 2, (x, y) => Math.hypot(x - 25, y - 25) < 10 || Math.hypot(x - 75, y - 25) < 8 ? 1 : 0, 0.5);
+  expect(loops.length).toBe(2);
+  for (const loop of loops) {
+    const cx = loop.reduce((s, p) => s + p[0], 0) / loop.length;
+    expect(Math.abs(cx - 25) < 2 || Math.abs(cx - 75) < 2).toBe(true);
+  }
+});
+
+test('the watercolour plan shares the frame and pattern of the engraved fish', () => {
+  const engraved = generate('Testus piscis');
+  const painted = generate('Testus piscis', { color_pattern: 1, color_fin_margin: 1 }, {}, { paint: true });
+  // Ink is the unchanged line work; colour moves into washes.
+  expect(painted.polylines).toEqual(engraved.polylines);
+  expect(painted.colors!.length).toBe(painted.polylines.length);
+  const { washes, marks } = painted.paint!;
+  const pigment = washes.filter(w => w.color === painted.paint!.palette.pigment);
+  expect(pigment.length).toBeGreaterThan(3);
+  expect(marks.length).toBeGreaterThan(0);
+  for (const w of washes) {
+    expect(w.poly.length).toBeGreaterThanOrEqual(3);
+    expect(w.poly.every(([x, y]) => x > -20 && y > -20 && x < 520 && y < 320)).toBe(true);
+  }
+  const none = generate('Testus piscis', { color_pattern: 0 }, {}, { paint: true });
+  expect(none.paint!.washes.filter(w => w.color === none.paint!.palette.pigment).length).toBe(0);
+  expect(generate('Testus piscis', { color_pattern: 1, color_fin_margin: 1 }, {}, { paint: true })).toEqual(painted);
 });

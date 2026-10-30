@@ -2,7 +2,7 @@ import { resolveTraits, traitById, type FishTraitExtensions } from './traits/ind
 import { bodyFrame, type TraitContext } from './traits/types.ts';
 import { lateralLine, ocellusMask } from './traits/markings.ts';
 import { ribbonFin } from './traits/anatomy.ts';
-import { colorize, colorParameters } from './traits/color.ts';
+import { colorize, colorParameters, paintPlan, type PaintPlan } from './traits/color.ts';
 
 /** A drawing consists of ordered, two-dimensional pen strokes. */
 export type Point = [number, number];
@@ -2256,8 +2256,8 @@ function fish_parts(arg: FishParams, extensions: FishTraitExtensions = {}){
   return { strokes, tags, anatomy };
 }
 
-function reframe(polylines: Drawing, pad=20, text: string | null = null){
-  
+/** The fit-to-frame transform reframe applies, so other layers can share it. */
+function frame_transform(polylines: Drawing, pad=20, text: string | null = null){
   let W = (500-pad*2);
   let H = (300-pad*2) - (text?10:0);
   let bbox = get_bbox(polylines.flat());
@@ -2266,12 +2266,14 @@ function reframe(polylines: Drawing, pad=20, text: string | null = null){
   let s = Math.min(sw,sh);
   let px = (W-bbox.w*s)/2;
   let py = (H-bbox.h*s)/2;
+  return ([x,y]: Point): Point => [(x - bbox.x) * s + px+pad, (y - bbox.y) * s + py+pad];
+}
+
+function reframe(polylines: Drawing, pad=20, text: string | null = null){
+  const to_frame = frame_transform(polylines, pad, text);
   for (let i = 0; i < polylines.length; i++){
     for (let j = 0; j < polylines[i].length; j++){
-      let [x,y] = polylines[i][j];
-      x = (x - bbox.x) * s + px+pad;
-      y = (y - bbox.y) * s + py+pad;
-      polylines[i][j] = [x,y];
+      polylines[i][j] = to_frame(polylines[i][j]);
     }
   }
   if (!text) return polylines;
@@ -2670,12 +2672,33 @@ export function parameters_for_seed(seed: string): FishParams {
   return { ...generate_params(), ...colorParameters(str_to_seed(seed + ':color')) };
 }
 
-export function generate(seed: string, overrides: Partial<FishParams> = {}, extensions: FishTraitExtensions = {}): {
-  seed: string; params: FishParams; polylines: Drawing; colors?: string[];
+export interface GenerateOptions {
+  /** Return a watercolour plan (for p5.brush) instead of engraved colour hatching. */
+  paint?: boolean;
+}
+
+export function generate(seed: string, overrides: Partial<FishParams> = {}, extensions: FishTraitExtensions = {}, options: GenerateOptions = {}): {
+  seed: string; params: FishParams; polylines: Drawing; colors?: string[]; paint?: PaintPlan;
 } {
   const params = { ...parameters_for_seed(seed), ...overrides };
   // Head construction can adjust the eye size; keep the requested parameters intact.
   const parts = fish_parts({ ...params }, extensions);
+  if (options.paint) {
+    // Ink stays the engraved line work; colour becomes washes in the same frame.
+    const to_frame = frame_transform(parts.strokes, 20, seed + '.');
+    const plan = paintPlan(parts.anatomy, params, str_to_seed(seed + ':pigment'));
+    const tags = [...parts.tags];
+    const polylines = reframe(parts.strokes, 20, seed + '.');
+    while (tags.length < polylines.length) tags.push('ink');
+    cleanup(polylines, tags);
+    const colors = tags.map(tag => tag === 'texture' ? plan.palette.texture : plan.palette.ink);
+    const paint: PaintPlan = {
+      palette: plan.palette,
+      washes: plan.washes.map(w => ({ ...w, poly: w.poly.map(to_frame) })),
+      marks: plan.marks.map(m => ({ ...m, points: m.points.map(to_frame) })),
+    };
+    return { seed, params, polylines, colors, paint };
+  }
   if (!params.color_enabled) {
     return { seed, params, polylines: cleanup(reframe(parts.strokes, 20, seed + '.')) };
   }

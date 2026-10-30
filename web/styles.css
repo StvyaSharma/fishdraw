@@ -1,3 +1,4 @@
 body { margin: 0; }
 #root { min-height: 100dvh; display: grid; place-items: center; }
-#root > img { max-width: 100%; height: auto; }
+#root > img, .painting canvas { max-width: 100%; height: auto !important; }
+.painting { display: grid; }

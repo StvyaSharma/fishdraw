@@ -90,12 +90,18 @@ export function surfaceConfig(p: FishParams, extensions: FishTraitExtensions = {
   } satisfies DialConfig;
 }
 
+export const renderers = [
+  { value: 'engraved', label: 'Engraved · SVG hatching' },
+  { value: 'watercolour', label: 'Watercolour · p5.brush' },
+];
+
 export function outputConfig() {
   return {
     reset: { type: 'action', label: 'Reset' },
+    renderer: { type: 'select', options: renderers, default: 'engraved' },
     export: {
       _collapsed: true,
-      format: { type: 'select', options: [...formats], default: 'svg' },
+      format: { type: 'select', options: [...formats, 'png'], default: 'svg' },
       speed: [1, 0.5, 4, 0.5],
       download: { type: 'action' },
     },
