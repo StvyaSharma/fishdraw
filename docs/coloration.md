@@ -23,6 +23,16 @@ How fishdraw colours a fish, and the biology each rule comes from. The goal is t
 
 Every layer is **subtractive**: `carve` overfills a box with parallel hatching, then keeps only the runs where a predicate holds (inside the region, outside masks, field above threshold). Pigment uses a sharp threshold; sheen and countershading use smooth-noise dithering, which reproduces sharp pigment edges and soft structural ones.
 
+## Watercolour renderer (p5.brush)
+
+`generate(seed, overrides, extensions, { paint: true })` returns a `paint` plan alongside the ink:
+
+- **Washes**: polygons in frame coordinates, each with a colour, opacity, bleed and texture. The back and belly are split along the same noise-bent countershading boundary, the sheen band follows the same centre line, and the head, fins and iris each get a wash.
+- **Pigment**: `contours()` runs marching squares over the same pigment field the hatching uses, so the watercolour spots are exactly the engraved pattern's shapes.
+- **Marks**: the parts of each fin edge that stand clear of the body, painted with a marker brush when fin margins are on.
+
+`web/paint.ts` replays the plan with the standalone build of p5.brush on one WebGL2 canvas. It seeds p5.brush from the fish's name so the paint texture is repeatable, paints all washes in one pass so they dry together, then draws the marks and the ink. p5.brush uses a centred origin, so coordinates are shifted by half the sheet.
+
 ## Guarantees
 
 - Colour never changes the line work. `generate(seed)` with colour off is byte-identical to before, and every monochrome stroke appears unchanged in the colour version (`tests/color.test.ts`).

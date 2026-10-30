@@ -235,7 +235,8 @@ function carve(box: { x0: number; y0: number; x1: number; y1: number }, angle: n
   return out;
 }
 
-export function colorize(anatomy: ColorAnatomy, settings: ColorSettings, seed: number): { strokes: Drawing; colors: string[]; palette: Palette } {
+/** Fields shared by the engraved and painted renderers: one seed, one pattern. */
+function colorFields(anatomy: ColorAnatomy, settings: ColorSettings, seed: number) {
   const random = colorRandom(seed ^ 0x9e3779b9);
   const noise = valueNoise(seed);
   const pal = palette(settings.color_palette, settings.color_hue_shift);
@@ -285,13 +286,22 @@ export function colorize(anatomy: ColorAnatomy, settings: ColorSettings, seed: n
     x0: Math.min(trunk.box.x0, head.box.x0), y0: Math.min(trunk.box.y0, head.box.y0),
     x1: Math.max(trunk.box.x1, head.box.x1), y1: Math.max(trunk.box.y1, head.box.y1),
   };
+  const threshold = 0.5 - 0.12 * contrast;
+  const mark = (x: number, y: number) => pigment(x, y) + (noise(x * 0.07, y * 0.07, 5) - 0.5) * 0.12;
+  const backEdge = (x: number) => 0.15 + (noise(x * 0.012, 1.3, 2) - 0.5) * 0.7;
+  const sheenCentre = (x: number) => 0.12 + (noise(x * 0.01, 4.4, 3) - 0.5) * 0.4;
+  return { pal, contrast, body, eye, trunk, head, headMask, pectoral, x0, uv, onTrunk, onSkin, dither, noise, pigment, eyeBar, skinBox, threshold, mark, backEdge, sheenCentre };
+}
+
+export function colorize(anatomy: ColorAnatomy, settings: ColorSettings, seed: number): { strokes: Drawing; colors: string[]; palette: Palette } {
+  const { pal, contrast, eye, trunk, headMask, uv, onSkin, dither, noise, eyeBar, skinBox, threshold, mark, backEdge, sheenCentre } = colorFields(anatomy, settings, seed);
   const layers: [string, Drawing][] = [];
 
   // Countershading: dark dorsum fading through a noise-bent boundary.
   layers.push([pal.back, carve(skinBox, -40, 2.6, (x, y) => {
     if (!onSkin(x, y)) return false;
     const [, v] = uv(x, y);
-    const edge = 0.15 + (noise(x * 0.012, 1.3, 2) - 0.5) * 0.7;
+    const edge = backEdge(x);
     const t = Math.max(0, Math.min(1, (edge - v) / (edge + 1)));
     return dither(x, y, 1) < t ** 0.8 * (0.55 + 0.4 * contrast) + 0.08;
   })]);
@@ -301,12 +311,10 @@ export function colorize(anatomy: ColorAnatomy, settings: ColorSettings, seed: n
   layers.push([pal.sheen, carve(skinBox, 6, 2.3, (x, y) => {
     if (!onSkin(x, y)) return false;
     const [, v] = uv(x, y);
-    const centre = 0.12 + (noise(x * 0.01, 4.4, 3) - 0.5) * 0.4;
+    const centre = sheenCentre(x);
     return dither(x, y, 3) < Math.exp(-(((v - centre) / 0.3) ** 2)) * 0.85;
   })]);
   // Melanophore pattern: sharp-edged, with a cross-hatched core for depth.
-  const threshold = 0.5 - 0.12 * contrast;
-  const mark = (x: number, y: number) => pigment(x, y) + (noise(x * 0.07, y * 0.07, 5) - 0.5) * 0.12;
   layers.push([pal.pigment, carve(skinBox, 50, 1.9, (x, y) => onSkin(x, y) && (mark(x, y) > threshold || eyeBar(x, y)))]);
   layers.push([pal.pigment, carve(skinBox, -50, 2.4, (x, y) => onSkin(x, y) && mark(x, y) > threshold + 0.22)]);
 
@@ -337,4 +345,102 @@ export function colorize(anatomy: ColorAnatomy, settings: ColorSettings, seed: n
   const colors: string[] = [];
   for (const [color, lines] of layers) for (const line of lines) { strokes.push(line); colors.push(color); }
   return { strokes, colors, palette: pal };
+}
+
+/** Closed iso-contours of a scalar field (marching squares with segment chaining). */
+export function contours(box: { x0: number; y0: number; x1: number; y1: number }, step: number, value: (x: number, y: number) => number, level: number): Polyline[] {
+  const cols = Math.ceil((box.x1 - box.x0) / step) + 3, rows = Math.ceil((box.y1 - box.y0) / step) + 3;
+  const ox = box.x0 - step, oy = box.y0 - step;
+  const grid = new Float32Array(cols * rows);
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    // The outer ring is forced below the level so every contour closes.
+    grid[j * cols + i] = i === 0 || j === 0 || i === cols - 1 || j === rows - 1 ? -1 : value(ox + i * step, oy + j * step);
+  }
+  const key = (a: Point) => `${a[0].toFixed(3)},${a[1].toFixed(3)}`;
+  const cross = (i0: number, j0: number, i1: number, j1: number): Point => {
+    const a = grid[j0 * cols + i0], b = grid[j1 * cols + i1], t = (level - a) / (b - a);
+    return [ox + (i0 + (i1 - i0) * t) * step, oy + (j0 + (j1 - j0) * t) * step];
+  };
+  const next = new Map<string, Point>();
+  for (let j = 0; j < rows - 1; j++) for (let i = 0; i < cols - 1; i++) {
+    const tl = grid[j * cols + i] > level, tr = grid[j * cols + i + 1] > level;
+    const br = grid[(j + 1) * cols + i + 1] > level, bl = grid[(j + 1) * cols + i] > level;
+    const top = () => cross(i, j, i + 1, j), right = () => cross(i + 1, j, i + 1, j + 1);
+    const bottom = () => cross(i, j + 1, i + 1, j + 1), left = () => cross(i, j, i, j + 1);
+    // Oriented so the inside stays on one side; saddles split consistently.
+    const cases: Record<number, [() => Point, () => Point][]> = {
+      1: [[bottom, left]], 2: [[right, bottom]], 3: [[right, left]], 4: [[top, right]],
+      5: [[top, left], [bottom, right]], 6: [[top, bottom]], 7: [[top, left]], 8: [[left, top]],
+      9: [[bottom, top]], 10: [[left, bottom], [right, top]], 11: [[right, top]], 12: [[left, right]],
+      13: [[bottom, right]], 14: [[left, bottom]],
+    };
+    const code = (tl ? 8 : 0) | (tr ? 4 : 0) | (br ? 2 : 0) | (bl ? 1 : 0);
+    for (const [from, to] of cases[code] ?? []) {
+      const a = from(), b = to();
+      next.set(key(a), b);
+    }
+  }
+  const loops: Polyline[] = [];
+  const seen = new Set<string>();
+  for (const [startKey, startPoint] of next) {
+    if (seen.has(startKey)) continue;
+    const loop: Polyline = [];
+    let k = startKey, p: Point | undefined = startPoint;
+    while (p && !seen.has(k)) {
+      seen.add(k);
+      loop.push(p);
+      k = key(p);
+      p = next.get(k);
+    }
+    if (loop.length > 5) loops.push(loop);
+  }
+  return loops;
+}
+
+export interface Wash { poly: Polyline; color: string; opacity: number; bleed: number; texture: number }
+export interface Mark { points: Polyline; color: string; weight: number }
+export interface PaintPlan { washes: Wash[]; marks: Mark[]; palette: Palette }
+
+/** Watercolour plan for p5.brush: the same fields, now as wash polygons. The
+ * pigment pattern is contoured, so each blob is a wash whose shape still comes
+ * from the cell simulation, and each wash then dries with its own bleed. */
+export function paintPlan(anatomy: ColorAnatomy, settings: ColorSettings, seed: number): PaintPlan {
+  const f = colorFields(anatomy, settings, seed);
+  const { pal, body, eye, contrast } = f;
+  const washes: Wash[] = [];
+  const marks: Mark[] = [];
+  const along = (from: number, count: number, v: (u: number, x: number) => number): Polyline =>
+    Array.from({ length: count }, (_, i) => {
+      const u = from + (1 - from) * i / (count - 1);
+      const x = body.point(u, 0)[0];
+      return body.point(u, v(u, x));
+    });
+  const rearOfHead = Math.max(0, (f.head.box.x1 - f.x0) / body.length - 0.04);
+  const top = along(rearOfHead, 40, () => -1);
+  const edge = along(rearOfHead, 40, (_, x) => f.backEdge(x));
+  washes.push({ poly: [...along(rearOfHead, 40, () => 1), ...edge.slice().reverse()], color: pal.belly, opacity: 70, bleed: 0.12, texture: 0.3 });
+  washes.push({ poly: [...top, ...edge.slice().reverse()], color: pal.back, opacity: 80 + 70 * contrast, bleed: 0.2, texture: 0.5 });
+  const sheenTop = along(rearOfHead, 40, (_, x) => f.sheenCentre(x) - 0.22);
+  const sheenBottom = along(rearOfHead, 40, (_, x) => f.sheenCentre(x) + 0.22);
+  washes.push({ poly: [...sheenTop, ...sheenBottom.reverse()], color: pal.sheen, opacity: 60, bleed: 0.3, texture: 0.2 });
+  washes.push({ poly: anatomy.head, color: pal.back, opacity: 55 + 40 * contrast, bleed: 0.1, texture: 0.4 });
+  for (const poly of contours(f.skinBox, 2.5, (x, y) => f.onSkin(x, y) ? Math.max(f.mark(x, y), f.eyeBar(x, y) ? 1 : 0) : 0, f.threshold)) {
+    washes.push({ poly, color: pal.pigment, opacity: 120 + 80 * contrast, bleed: 0.08, texture: 0.6 });
+  }
+  for (const poly of anatomy.fins) {
+    if (poly.length < 3) continue;
+    washes.push({ poly, color: pal.fin, opacity: 45, bleed: 0.25, texture: 0.3 });
+    if (!settings.color_fin_margin) continue;
+    // Margins: the stretches of fin outline that stand clear of the body.
+    let run: Polyline = [];
+    for (const p of [...poly, poly[0]]) {
+      const free = edgeDistance(anatomy.outline, p[0], p[1]) > 8 && !f.headMask.has(p[0], p[1]);
+      if (free) run.push(p);
+      else { if (run.length > 3) marks.push({ points: run, color: pal.accent, weight: 1.6 }); run = []; }
+    }
+    if (run.length > 3) marks.push({ points: run, color: pal.accent, weight: 1.6 });
+  }
+  const iris = Array.from({ length: 24 }, (_, i): Point => [eye.x + Math.cos(i / 24 * Math.PI * 2) * eye.r * 0.95, eye.y + Math.sin(i / 24 * Math.PI * 2) * eye.r * 0.95]);
+  washes.push({ poly: iris, color: pal.accent, opacity: 170, bleed: 0.05, texture: 0.2 });
+  return { washes, marks, palette: pal };
 }
