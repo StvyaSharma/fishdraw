@@ -1,10 +1,10 @@
 import { useDeferredValue, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { DialRoot, useDialKitController, type DialConfig } from 'dialkit';
+import { DialRoot, useDialKitController } from 'dialkit';
 import { binomen, generate, parameters_for_seed } from '../fishdraw.ts';
 import { fishInspirations, parameters_for_preset } from '../presets.ts';
 import { isOutputFormat, serialize } from '../formats.ts';
-import { controlConfig, parameterOverrides } from './controls.ts';
+import { anatomyConfig, outputConfig, parameterOverrides, surfaceConfig } from './controls.ts';
 import 'dialkit/styles.css';
 import './styles.css';
 
@@ -21,54 +21,48 @@ function download(content: string, filename: string, type: string) {
 
 function FishEditor({ seed, presetId }: { seed: string; presetId: string }) {
   const baseParams = useMemo(() => parameters_for_preset(seed, presetId), [seed, presetId]);
-  const config = useMemo(() => ({
-    ...controlConfig(baseParams),
-    reset: { type: 'action' },
-    export: {
-      _collapsed: true,
-      format: { type: 'select', options: ['svg', 'smil', 'json', 'csv', 'ps'], default: 'svg' },
-      speed: [1, 0.5, 4, 0.5],
-      download: { type: 'action' },
-    },
-  } satisfies DialConfig), [baseParams]);
-  const dial = useDialKitController('Anatomy', config, {
+  const anatomy = useDialKitController('Anatomy', useMemo(() => anatomyConfig(baseParams), [baseParams]));
+  const surface = useDialKitController('Surface', useMemo(() => surfaceConfig(baseParams), [baseParams]));
+  const render = () => generate(seed, { ...baseParams, ...parameterOverrides(anatomy.getValues(), surface.getValues()) });
+  const output = useDialKitController('Output', useMemo(() => outputConfig(), []), {
     onAction(path) {
-      if (path === 'reset') dial.resetValues();
+      if (path === 'reset') { anatomy.resetValues(); surface.resetValues(); }
       if (path === 'export.download') {
-        const values = dial.getValues();
+        const values = output.getValues();
         const format = values.export.format;
         if (!isOutputFormat(format)) return;
-        const fish = generate(seed, { ...baseParams, ...parameterOverrides(values) });
+        const fish = render();
         const extension = format === 'smil' ? 'svg' : format;
         const type = format === 'svg' || format === 'smil' ? 'image/svg+xml' : format === 'json' ? 'application/json' : 'text/plain';
         const filename = seed.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'fish';
-        download(serialize(fish.polylines, format, values.export.speed), `${filename}.${extension}`, type);
+        download(serialize(fish.polylines, format, values.export.speed, fish.colors), `${filename}.${extension}`, type);
       }
     },
   });
-  const values = useDeferredValue(dial.values);
+  const anatomyValues = useDeferredValue(anatomy.values);
+  const surfaceValues = useDeferredValue(surface.values);
   const result = useMemo(() => {
     try {
-      const fish = generate(seed, { ...baseParams, ...parameterOverrides(values) });
-      const svg = serialize(fish.polylines, 'svg');
+      const fish = generate(seed, { ...baseParams, ...parameterOverrides(anatomyValues, surfaceValues) });
+      const svg = serialize(fish.polylines, 'svg', 1, fish.colors);
       return { image: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, error: null };
     } catch {
       return { image: '', error: 'Unable to draw this combination. Reset the parameters or try another seed.' };
     }
-  }, [seed, baseParams, values]);
+  }, [seed, baseParams, anatomyValues, surfaceValues]);
 
   return result.error ? <p role="alert">{result.error}</p> : <img
     src={result.image}
     alt={`Procedural fish drawing named ${seed}`}
     width="520"
     height="320"
-    aria-busy={values !== dial.values}
+    aria-busy={anatomyValues !== anatomy.values || surfaceValues !== surface.values}
   />;
 }
 
 function App() {
   const [specimen, setSpecimen] = useState({ seed: 'Biggus fishus', presetId: 'procedural', revision: 0 });
-  const dial = useDialKitController('Fish', {
+  const dial = useDialKitController('Specimen', {
     seed: { type: 'text', default: 'Biggus fishus' },
     inspiration: { type: 'select', options: fishInspirations.map(p => ({ value: p.id, label: p.label })), default: 'procedural' },
     applyInspiration: { type: 'action' },

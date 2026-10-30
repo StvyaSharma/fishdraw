@@ -1,6 +1,7 @@
-import { binomen, main, parameters_for_seed, type Drawing, type FishParams } from './fishdraw.ts';
+import { binomen, generate, parameters_for_seed, type FishParams } from './fishdraw.ts';
 import { fishInspirations, generate_preset } from './presets.ts';
 import { fishTraits } from './traits/index.ts';
+import { paletteFamilies } from './traits/color.ts';
 import { isOutputFormat, serialize, type OutputFormat } from './formats.ts';
 
 export function run(args: string[]): string {
@@ -18,14 +19,22 @@ export function run(args: string[]): string {
   for (let i = 0; i < args.length; i++) {
     const option = args[i];
     if (option === '--help' || option === '-h') {
-      return `Usage: bun cli.ts [--seed "Fish name"] [--preset ${fishInspirations.map(p => p.id).join('|')}] [--shape KEY] [--texture KEY] [--pattern KEY] [--tail KEY] [--format svg|smil|json|csv|ps] [--speed 2]\nUse --list-presets or --list-traits to discover available choices.`;
+      return `Usage: bun cli.ts [--seed "Fish name"] [--preset ${fishInspirations.map(p => p.id).join('|')}] [--shape KEY] [--texture KEY] [--pattern KEY] [--tail KEY] [--color] [--palette KEY] [--format svg|smil|json|csv|ps] [--speed 2]\nUse --list-presets, --list-traits or --list-palettes to discover available choices.`;
     }
     if (option === '--list-presets') return fishInspirations.map(p => `${p.id}\t${p.label}: ${p.description}`).join('\n');
+    if (option === '--list-palettes') return paletteFamilies.map(p => `${p.key}\t${p.label}`).join('\n');
     if (option === '--list-traits') return JSON.stringify(Object.fromEntries(Object.entries(fishTraits).map(([key, entries]) => [key, entries.map(({ id, key, label }) => ({ id, key, label }))])), null, 2);
-    if (!['--seed', '--format', '--speed', '--preset', ...Object.keys(selectors)].includes(option)) throw new Error(`Unknown option: ${option}`);
+    if (option === '--color') { overrides.color_enabled = 1; continue; }
+    if (!['--seed', '--palette', '--format', '--speed', '--preset', ...Object.keys(selectors)].includes(option)) throw new Error(`Unknown option: ${option}`);
     const value = args[++i];
     if (value === undefined || value.startsWith('--')) throw new Error(`Missing value for ${option}`);
     if (option === '--seed') seed = value;
+    if (option === '--palette') {
+      const family = paletteFamilies.find(p => p.key === value);
+      if (!family) throw new Error(`Unknown palette: ${value}. Choose ${paletteFamilies.map(p => p.key).join(', ')}.`);
+      overrides.color_palette = family.id;
+      overrides.color_enabled = 1;
+    }
     if (option === '--preset') {
       if (!fishInspirations.some(p => p.id === value)) throw new Error(`Unknown fish inspiration: ${value}.`);
       preset = value;
@@ -45,17 +54,12 @@ export function run(args: string[]): string {
       if (!Number.isFinite(speed) || speed <= 0) throw new Error('Speed must be a positive number.');
     }
   }
-  let drawing: Drawing;
-  if (preset === 'procedural' && Object.keys(overrides).length === 0) {
-    drawing = main(seed);
-  } else {
-    if (seed === undefined) {
-      parameters_for_seed(crypto.randomUUID());
-      seed = binomen();
-    }
-    drawing = generate_preset(seed, preset, overrides).polylines;
+  if (seed === undefined) {
+    parameters_for_seed(crypto.randomUUID());
+    seed = binomen();
   }
-  return serialize(drawing, format, speed);
+  const fish = preset === 'procedural' ? generate(seed, overrides) : generate_preset(seed, preset, overrides);
+  return serialize(fish.polylines, format, speed, fish.colors);
 }
 
 if (import.meta.main) {

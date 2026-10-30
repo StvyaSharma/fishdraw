@@ -5,8 +5,11 @@ import { serialize } from '../formats.ts';
 
 async function expectPreset(drawing: Locator, presetId: string, seed = 'Biggus fishus') {
   const svg = decodeURIComponent((await drawing.getAttribute('src'))!.split(',')[1]);
-  const expected = serialize(generate_preset(seed, presetId).polylines, 'svg');
-  const strokes = (value: string) => [...value.matchAll(/\nM ([^\n]+)/g)].map(m => m[1].trim().split(/\s+/).map(Number));
+  const fish = generate_preset(seed, presetId, { color_enabled: 1 });
+  const expected = serialize(fish.polylines, 'svg', 1, fish.colors);
+  // Compare the black ink layer: colour hatching is checked by unit tests.
+  const ink = (value: string) => value.slice(value.indexOf('<path stroke="black"'));
+  const strokes = (value: string) => [...ink(value).matchAll(/\nM ([^\n]+)/g)].map(m => m[1].trim().split(/\s+/).map(Number));
   const actualLines = strokes(svg);
   const expectedLines = strokes(expected);
   // Different JS engines can simplify collinear points differently and drop a
@@ -51,6 +54,13 @@ test('DialKit controls, seeds, reset, and exports work in production', async ({ 
   await page.getByRole('button', { name: 'Reset', exact: true }).click();
   await expect(drawing).toHaveAttribute('src', initial!);
 
+  const inColor = page.getByRole('radiogroup', { name: 'In Color', exact: true });
+  await expect(drawing).toHaveAttribute('src', /stroke%3D%22%23/);
+  await inColor.getByRole('radio', { name: 'Off', exact: true }).click();
+  await expect(drawing).not.toHaveAttribute('src', /stroke%3D%22%23/);
+  await page.getByRole('button', { name: 'Reset', exact: true }).click();
+  await expect(drawing).toHaveAttribute('src', initial!);
+
   await page.getByRole('textbox', { name: 'Seed', exact: true }).fill('Testus piscis');
   await page.getByRole('button', { name: 'Draw', exact: true }).click();
   await expect(drawing).toHaveAttribute('alt', 'Procedural fish drawing named Testus piscis');
@@ -85,7 +95,7 @@ test('DialKit controls, seeds, reset, and exports work in production', async ({ 
       expect(parsed.errors).toBe(0);
       if (format === 'smil') expect(parsed.animations).toBeGreaterThan(0);
     }
-    if (format === 'json') expect(JSON.parse(content).length).toBeGreaterThan(0);
+    if (format === 'json') expect(JSON.parse(content)[0].color).toMatch(/^#/);
     if (format === 'ps') expect(content).toContain('%!PS-Adobe');
   }
   await page.getByRole('button', { name: 'Random', exact: true }).click();
@@ -137,8 +147,9 @@ test('randomise traits picks a new combination and keeps controls, reset, and ex
   const pending = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download', exact: true }).click();
   const download = await pending;
-  const polylines = await Bun.file((await download.path())!).json();
-  expect(preview).toBe(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(serialize(polylines, 'svg'))}`);
+  const strokes: { color: string; points: [number, number][] }[] = await Bun.file((await download.path())!).json();
+  const svg = serialize(strokes.map(s => s.points), 'svg', 1, strokes.map(s => s.color));
+  expect(preview).toBe(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
   expect(errors).toEqual([]);
 });
 
@@ -175,8 +186,8 @@ test('inspirations, independent traits, reset, and export stay in sync', async (
   const pending = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download', exact: true }).click();
   const downloaded = await pending;
-  const content = await Bun.file((await downloaded.path())!).text();
-  const expectedSvg = serialize(JSON.parse(content), 'svg');
+  const exported: { color: string; points: [number, number][] }[] = JSON.parse(await Bun.file((await downloaded.path())!).text());
+  const expectedSvg = serialize(exported.map(s => s.points), 'svg', 1, exported.map(s => s.color));
   expect(customized).toBe(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(expectedSvg)}`);
 
   await page.getByRole('button', { name: 'Reset', exact: true }).click();

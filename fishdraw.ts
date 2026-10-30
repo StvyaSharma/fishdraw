@@ -2,6 +2,7 @@ import { resolveTraits, traitById, type FishTraitExtensions } from './traits/ind
 import { bodyFrame, type TraitContext } from './traits/types.ts';
 import { lateralLine, ocellusMask } from './traits/markings.ts';
 import { ribbonFin } from './traits/anatomy.ts';
+import { colorize, colorParameters } from './traits/color.ts';
 
 /** A drawing consists of ordered, two-dimensional pen strokes. */
 export type Point = [number, number];
@@ -798,21 +799,36 @@ function poissondisk(W: number, H: number, r: number, samples: Polyline){
 }
 
 
-function draw_svg(polylines: Drawing){
-  let o = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="320">`
-  o += `<rect x="0" y="0" width="520" height="320" fill="floralwhite"/><rect x="10" y="10" width="500" height="300" stroke="black" stroke-width="1" fill="none"/><path stroke="black" stroke-width="1" fill="none" stroke-linecap="round" stroke-linejoin="round" d="`
-  for (let i = 0; i < polylines.length; i++){
-    o += '\nM ';
-    for (let j = 0; j < polylines[i].length; j++){
-      let [x,y] = polylines[i][j];
-      o += `${(~~((x+10)*100)) /100} ${(~~((y+10)*100)) /100} `;
-    }
-  }
-  o += `\n"/></svg>`
-  return o;
+/** Group strokes by pen, preserving first-use order so colour sits beneath ink. */
+function pen_layers(polylines: Drawing, colors?: string[]){
+  const layers = new Map<string, Drawing>();
+  polylines.forEach((line, i) => {
+    const color = colors?.[i] ?? '#000000';
+    if (!layers.has(color)) layers.set(color, []);
+    layers.get(color)!.push(line);
+  });
+  return [...layers];
 }
 
-function draw_svg_anim(polylines: Drawing, speed: number){
+function draw_svg(polylines: Drawing, colors?: string[]){
+  let o = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="320">`
+  o += `<rect x="0" y="0" width="520" height="320" fill="floralwhite"/><rect x="10" y="10" width="500" height="300" stroke="black" stroke-width="1" fill="none"/>`
+  for (const [color, lines] of pen_layers(polylines, colors)){
+    const ink = color === '#000000';
+    o += `<path stroke="${ink ? 'black' : color}" stroke-width="${ink ? 1 : 0.7}" fill="none" stroke-linecap="round" stroke-linejoin="round" d="`;
+    for (let i = 0; i < lines.length; i++){
+      o += '\nM ';
+      for (let j = 0; j < lines[i].length; j++){
+        let [x,y] = lines[i][j];
+        o += `${(~~((x+10)*100)) /100} ${(~~((y+10)*100)) /100} `;
+      }
+    }
+    o += `\n"/>`;
+  }
+  return o + `</svg>`;
+}
+
+function draw_svg_anim(polylines: Drawing, speed: number, colors?: string[]){
   let o = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="320">`;
   o += `<rect x="0" y="0" width="520" height="320" fill="floralwhite"/><rect x="10" y="10" width="500" height="300" stroke="black" stroke-width="1" fill="none"/>`
   let lengths = [];
@@ -834,7 +850,7 @@ function draw_svg_anim(polylines: Drawing, speed: number){
     let l = lengths[i];
     o += `
     <path 
-      stroke="black" 
+      stroke="${colors?.[i] ?? 'black'}" 
       stroke-width="1" 
       fill="none" 
       stroke-dasharray="${l}"
@@ -862,7 +878,7 @@ function draw_svg_anim(polylines: Drawing, speed: number){
   return o;
 }
 
-function draw_ps(polylines: Drawing){
+function draw_ps(polylines: Drawing, colors?: string[]){
   let o = `%!PS-Adobe-3.0 EPSF-3.0
 %%BoundingBox: 0 0 520 320
 1 setlinewidth
@@ -878,7 +894,13 @@ function draw_ps(polylines: Drawing){
 closepath
 F
 `;
+  let pen = '';
   for (let i = 0; i < polylines.length; i++){
+    const color = colors?.[i] ?? '#000000';
+    if (colors && color !== pen){
+      pen = color;
+      o += [1,3,5].map(k => (parseInt(color.slice(k,k+2),16)/255).toFixed(3)).join(' ') + ' setrgbcolor\n';
+    }
     for (let j = 0; j < polylines[i].length; j++){
       let [x,y] = polylines[i][j];
       o += `${(~~((x+10)*100)) /100} ${(~~((310-y)*100)) /100} `;
@@ -1754,7 +1776,8 @@ function barbel(x: number,y: number,n: number,ang: number,dd=3){
   return o0.concat(o1.slice().reverse());
 }
 
-function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y2: number, arg: FishParams): [Polyline, Drawing]{
+type HeadShape = { outline: Polyline; eye: { x: number; y: number; r: number } };
+function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y2: number, arg: FishParams): [Polyline, Drawing, HeadShape]{
   let n = 20;
   let curve0: Polyline = [];
   let curve1: Polyline = [];
@@ -1923,7 +1946,7 @@ function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y
     ...ef,...sh,...sh2,
     ...bbs,
     ...teeth0s,...teeth1s,
-    ...jaw]];
+    ...jaw], { outline, eye: { x: ex, y: ey, r: arg.eye_size } }];
 }
 
 function deviate(n: number){
@@ -1932,6 +1955,12 @@ function deviate(n: number){
 
 
 function fish(arg: FishParams, extensions: FishTraitExtensions = {}){
+  return fish_parts(arg, extensions).strokes;
+}
+
+/** The drawing plus which group each stroke belongs to and the regions the
+ * colour pass needs. Nothing here consumes extra randomness. */
+function fish_parts(arg: FishParams, extensions: FishTraitExtensions = {}){
   const traits = resolveTraits(extensions);
   const shape = traitById(traits.shapes, arg.body_curve_type);
   const texture = traitById(traits.textures, arg.scale_type);
@@ -2162,11 +2191,11 @@ function fish(arg: FishParams, extensions: FishTraitExtensions = {}){
   if (!arg.has_dorsal) { f0 = []; c0 = []; }
   if (!arg.has_pelvic) f2 = [];
   if (!arg.has_anal) f3 = [];
-  let cf,fh;
+  let cf,fh,head_shape;
   if (arg.neck_type == 0){
-    ;[cf,fh] = fish_head(50-arg.head_length,150+arg.nose_height,...curve0[6],...curve1[5],arg);
+    ;[cf,fh,head_shape] = fish_head(50-arg.head_length,150+arg.nose_height,...curve0[6],...curve1[5],arg);
   }else{
-    ;[cf,fh] = fish_head(50-arg.head_length,150+arg.nose_height,...curve0[5],...curve1[6],arg);
+    ;[cf,fh,head_shape] = fish_head(50-arg.head_length,150+arg.nose_height,...curve0[5],...curve1[6],arg);
   }
   bd = clip_multi(bd,cf).false;
   
@@ -2211,20 +2240,20 @@ function fish(arg: FishParams, extensions: FishTraitExtensions = {}){
   details = clip_multi(details, cf).false;
   details = clip_multi(details, c1).false;
 
-  return bd.
-  concat(f0).
-  concat(f1).
-  concat(f2).
-  concat(f3).
-  concat(f4).
-  concat(f5).
-  concat(fh).
-  concat(sh).
-  concat(sh2).
-  concat(sh3).
-  concat(details).
-  // concat([cf]).
-  concat();
+  const groups: [string, Drawing][] = [
+    ['texture', bd], ['ink', f0], ['ink', f1], ['ink', f2], ['ink', f3], ['ink', f4], ['ink', f5],
+    ['ink', fh], ['texture', sh], ['ink', sh2], ['ink', sh3], ['ink', details],
+  ];
+  const strokes: Drawing = [];
+  const tags: string[] = [];
+  for (const [tag, lines] of groups) for (const line of lines) { strokes.push(line); tags.push(tag); }
+  const medianFins = arg.finlet_type !== 5;
+  const anatomy = {
+    body: context.body, outline, head: head_shape.outline, headMask: cf, eye: head_shape.eye,
+    pectoral: c1,
+    fins: [medianFins && arg.has_dorsal ? c0 : [], c1, arg.has_pelvic ? c2 : [], medianFins && arg.has_anal ? c3 : [], medianFins ? c4 : []],
+  };
+  return { strokes, tags, anatomy };
 }
 
 function reframe(polylines: Drawing, pad=20, text: string | null = null){
@@ -2253,7 +2282,8 @@ function reframe(polylines: Drawing, pad=20, text: string | null = null){
   return polylines;
 }
 
-function cleanup(polylines: Drawing){
+function cleanup(polylines: Drawing, tags?: string[]){
+  const remove = (i: number) => { polylines.splice(i,1); tags?.splice(i,1); };
   for (let i = polylines.length-1; i>=0; i--){
     polylines[i] = approx_poly_dp(polylines[i],0.1);
     for (let j = 0; j < polylines[i].length; j++){
@@ -2262,12 +2292,12 @@ function cleanup(polylines: Drawing){
       }
     }
     if (polylines[i].length < 2){
-      polylines.splice(i,1);
+      remove(i);
       continue;
     }
     if (polylines[i].length == 2){
       if (dist(...polylines[i][0],...polylines[i][1])<0.9){
-        polylines.splice(i,1);
+        remove(i);
         continue;
       }
     }
@@ -2334,6 +2364,14 @@ function default_params(){
     eye_size:10,
     jaw_size:1,
     jaw_open:1,
+    color_enabled:0,
+    color_palette:0,
+    color_pattern:1,
+    color_pattern_scale:1,
+    color_contrast:0.6,
+    color_hue_shift:0,
+    color_fin_margin:0,
+    color_eye_bar:0,
   }
 }
 
@@ -2628,16 +2666,27 @@ function str_to_seed(str: string){
 export function parameters_for_seed(seed: string): FishParams {
   jsr = str_to_seed(seed);
   perlin = undefined;
-  return generate_params();
+  // Colour genes come from their own stream, after the line-work genes.
+  return { ...generate_params(), ...colorParameters(str_to_seed(seed + ':color')) };
 }
 
 export function generate(seed: string, overrides: Partial<FishParams> = {}, extensions: FishTraitExtensions = {}): {
-  seed: string; params: FishParams; polylines: Drawing;
+  seed: string; params: FishParams; polylines: Drawing; colors?: string[];
 } {
   const params = { ...parameters_for_seed(seed), ...overrides };
   // Head construction can adjust the eye size; keep the requested parameters intact.
-  const drawing = fish({ ...params }, extensions);
-  return { seed, params, polylines: cleanup(reframe(drawing, 20, seed + '.')) };
+  const parts = fish_parts({ ...params }, extensions);
+  if (!params.color_enabled) {
+    return { seed, params, polylines: cleanup(reframe(parts.strokes, 20, seed + '.')) };
+  }
+  // Colour hatching sits beneath the ink; both share one frame transform.
+  const color = colorize(parts.anatomy, params, str_to_seed(seed + ':pigment'));
+  const drawing = [...color.strokes, ...parts.strokes];
+  const colors = [...color.colors, ...parts.tags.map(tag => tag === 'texture' ? color.palette.texture : color.palette.ink)];
+  reframe(drawing, 20, seed + '.');
+  while (colors.length < drawing.length) colors.push(color.palette.ink);
+  const polylines = cleanup(drawing, colors);
+  return { seed, params, polylines, colors };
 }
 
 function main(seed?: string): Drawing {
