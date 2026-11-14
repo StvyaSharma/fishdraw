@@ -22,7 +22,7 @@ async function expectPreset(drawing: Locator, presetId: string, seed = 'Biggus f
 test('DialKit controls, seeds, reset, and exports work in production', async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/');
+  await page.goto('/?view=lines');
   const drawing = page.getByRole('img', { name: /Procedural fish drawing/ });
   await expect(drawing).toBeVisible();
   await expect(page.locator('header, footer, h1, aside')).toHaveCount(0);
@@ -103,7 +103,7 @@ test('randomise traits picks a new combination and keeps controls, reset, and ex
   }, uuids);
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/');
+  await page.goto('/?view=lines');
   const drawing = page.getByRole('img', { name: /Procedural fish drawing/ });
   await page.getByText('Inspiration', { exact: true }).click();
   await page.getByRole('option', { name: 'Florida gar', exact: true }).click();
@@ -145,7 +145,7 @@ test('randomise traits picks a new combination and keeps controls, reset, and ex
 test('inspirations, independent traits, reset, and export stay in sync', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/');
+  await page.goto('/?view=lines');
   const drawing = page.getByRole('img', { name: /Procedural fish drawing/ });
   for (const preset of fishInspirations.filter(p => p.id !== 'procedural')) {
     const before = await drawing.getAttribute('src');

@@ -1,3 +1,7 @@
 body { margin: 0; }
 #root { min-height: 100dvh; display: grid; place-items: center; }
 #root > img { max-width: 100%; height: auto; }
+#root > .painting { max-width: 100%; line-height: 0; }
+#root > .painting canvas { width: 520px; max-width: 100%; height: auto; }
+/* Holds the sheet's space while the first drawing is computed. */
+#root > .placeholder { width: 520px; max-width: 100%; aspect-ratio: 520 / 320; }

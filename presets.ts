@@ -1,5 +1,6 @@
 import { default_params, generate, parameters_for_seed, str_to_seed, type FishParams } from './fishdraw.ts';
 import { fishTraits } from './traits/index.ts';
+import { colourGenes, type Genes } from './colour/index.ts';
 
 export interface FishPreset {
   id: string;
@@ -7,6 +8,8 @@ export interface FishPreset {
   description: string;
   source: string;
   params: Partial<FishParams>;
+  /** Colour genes the inspiration fixes; the rest still come from the seed. */
+  colour?: Genes;
 }
 
 /** Artistic inspirations: proportions and visible ray/plate counts are simplified.
@@ -16,6 +19,7 @@ export const fishPresets: readonly FishPreset[] = [
     id: 'tuna', label: 'Bluefin tuna',
     description: 'A tapered torpedo, crescent tail, two dorsals and paired finlet trains.',
     source: 'https://www.floridamuseum.ufl.edu/discover-fish/species-profiles/bluefin-tuna/',
+    colour: { 'palette.family': 4, 'countershade.boundary': 0, 'countershade.strength': 0.9, 'sheen.on': 1, 'sheen.centre': 0.25, 'pigment.pattern': 0, 'fins.margin': 2, 'eyeBar.on': 0 },
     params: { body_curve_type: 2, body_length: 390, body_height: 105, scale_type: 4, pattern_type: 10,
       dorsal_type: 1, dorsal_length: 65, dorsal_start: 10, dorsal_end: 18, finlet_type: 4,
       wing_length: 65, wing_type: 1, pelvic_length: 25, anal_length: 38, anal_start: 19, anal_end: 24,
@@ -25,6 +29,7 @@ export const fishPresets: readonly FishPreset[] = [
     id: 'butterflyfish', label: 'Foureye butterflyfish',
     description: 'A deep oval with comb-edged scales, chevrons, an ocellus and an arched lateral line.',
     source: 'https://biogeodb.stri.si.edu/caribbean/en/thefishes/species/3842',
+    colour: { 'palette.family': 2, 'eyeBar.on': 1, 'pigment.pattern': 0, 'fins.margin': 1, 'countershade.strength': 0.4 },
     params: { body_curve_type: 3, body_length: 240, body_height: 145, scale_type: 6, scale_scale: 0.9,
       pattern_type: 6, pattern_scale: 1.4, has_ocellus: 1, lateral_line_type: 2,
       dorsal_length: 55, dorsal_start: 7, dorsal_end: 28, anal_length: 55, anal_start: 16, anal_end: 29,
@@ -34,6 +39,7 @@ export const fishPresets: readonly FishPreset[] = [
     id: 'moray', label: 'Reticulated moray',
     description: 'A long, smooth body with a pigment network and continuous median fins; no paired fins.',
     source: 'https://fishesofaustralia.net.au/Home/family/44',
+    colour: { 'palette.family': 6, 'pigment.pattern': 5, 'pigment.scale': 0.9, 'pigment.coverage': 0.6, 'pigment.dorsal': 0, 'sheen.on': 0, 'eyeBar.on': 0 },
     params: { body_curve_type: 4, body_length: 480, body_height: 48, scale_type: 4, pattern_type: 7,
       pattern_scale: 0.85, has_pectoral: 0, has_pelvic: 0, finlet_type: 5, dorsal_length: 45,
       anal_length: 28, tail_type: 7, tail_length: 55, has_teeth: 1, teeth_length: 5,
@@ -43,6 +49,7 @@ export const fishPresets: readonly FishPreset[] = [
     id: 'pike', label: 'Northern pike',
     description: 'An elongated predator with rear-set fins, long jaws and teeth; pale spots are outlined.',
     source: 'https://wdfw.wa.gov/species-habitats/invasive/esox-lucius',
+    colour: { 'palette.family': 5, 'pigment.pattern': 1, 'pigment.scale': 0.8, 'pigment.fins': 1, 'sheen.on': 0, 'eyeBar.on': 0 },
     params: { body_curve_type: 5, body_length: 440, body_height: 58, scale_type: 5, scale_scale: 0.8,
       pattern_type: 9, pattern_scale: 0.7, dorsal_start: 22, dorsal_end: 29, dorsal_length: 55,
       anal_start: 23, anal_end: 30, anal_length: 40, pelvic_start: 15, pelvic_end: 19,
@@ -53,6 +60,7 @@ export const fishPresets: readonly FishPreset[] = [
     id: 'sturgeon', label: 'Atlantic sturgeon',
     description: 'An elongated body with rows of scutes, a long snout, underside barbels and an unequal tail.',
     source: 'https://biogeodb.stri.si.edu/caribbean/en/thefishes/species/2760',
+    colour: { 'palette.family': 6, 'pigment.pattern': 0, 'countershade.strength': 0.85, 'sheen.on': 0, 'eyeBar.on': 0 },
     params: { body_curve_type: 5, body_length: 420, body_height: 70, scale_type: 9, pattern_type: 0,
       dorsal_start: 23, dorsal_end: 29, dorsal_length: 60, wing_length: 65,
       anal_start: 24, anal_end: 30, anal_length: 30, tail_type: 8, tail_length: 100,
@@ -63,6 +71,7 @@ export const fishPresets: readonly FishPreset[] = [
     id: 'lionfish', label: 'Red lionfish',
     description: 'Exaggerated dorsal spines and pectoral rays, smooth-edged scales and dark bars.',
     source: 'https://australian.museum/learn/animals/fishes/common-lionfish-pterois-volitans/',
+    colour: { 'palette.family': 3, 'pigment.pattern': 3, 'pigment.scale': 1.2, 'pigment.coverage': 0.55, 'pigment.dorsal': 0, 'pigment.fins': 1, 'eyeBar.on': 0 },
     params: { body_curve_type: 3, body_length: 270, body_height: 95, scale_type: 5, pattern_type: 3,
       pattern_scale: 0.55, dorsal_texture_type: 1, dorsal_length: 170, dorsal_start: 7, dorsal_end: 27,
       wing_texture_type: 1, wing_length: 200, wing_width: 35, pelvic_length: 95,
@@ -72,6 +81,7 @@ export const fishPresets: readonly FishPreset[] = [
     id: 'catfish', label: 'Channel catfish',
     description: 'Smooth skin, scattered spots, visible barbels, an adipose fin and a forked tail.',
     source: 'https://www.floridamuseum.ufl.edu/discover-fish/species-profiles/channel-catfish/',
+    colour: { 'palette.family': 0, 'pigment.pattern': 1, 'pigment.scale': 0.7, 'pigment.coverage': 0.25, 'blush.on': 0, 'eyeBar.on': 0 },
     params: { body_curve_type: 5, body_length: 370, body_height: 90, scale_type: 4, pattern_type: 1,
       pattern_scale: 0.85, dorsal_type: 1, dorsal_start: 10, dorsal_end: 17, dorsal_length: 65,
       finlet_type: 2, tail_type: 2, tail_length: 85, has_moustache: 1, moustache_length: 42,
@@ -82,6 +92,7 @@ export const fishPresets: readonly FishPreset[] = [
     id: 'gar', label: 'Florida gar',
     description: 'Diamond armor and scattered spots, with a long toothy snout and rear-set fins.',
     source: 'https://www.floridamuseum.ufl.edu/discover-fish/species-profiles/florida-gar/',
+    colour: { 'palette.family': 1, 'pigment.pattern': 1, 'pigment.fins': 1, 'pigment.dorsal': 0.5, 'eyeBar.on': 0 },
     params: { body_curve_type: 5, body_length: 450, body_height: 55, scale_type: 7, pattern_type: 1,
       pattern_scale: 0.8, dorsal_start: 23, dorsal_end: 29, dorsal_length: 40,
       anal_start: 24, anal_end: 30, anal_length: 30, wing_length: 40, pelvic_length: 30,
@@ -170,4 +181,9 @@ export function parameters_for_preset(seed: string, presetId = 'procedural'): Fi
 
 export function generate_preset(seed: string, presetId: string, overrides: Partial<FishParams> = {}) {
   return generate(seed, { ...parameters_for_preset(seed, presetId), ...overrides });
+}
+
+/** A seed's colour genes, with the inspiration's colouring laid over them. */
+export function colour_for_preset(seed: string, presetId = 'procedural'): Genes {
+  return { ...colourGenes(seed), ...fishPresets.find(p => p.id === presetId)?.colour };
 }
