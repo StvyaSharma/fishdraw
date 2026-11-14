@@ -15,6 +15,7 @@ The engine produces `Drawing`: an ordered array of 2D pen strokes. Shapes, surfa
 - `presets.ts`: coherent inspiration definitions and seeded exploration.
 - `fishdraw.ts`: seeded randomness, original detail renderers, occlusion, framing, and cleanup.
 - `web/controls.ts`: catalog-derived selects and safe mappings from sliders to fin anchors.
+- `colour/`: colour genes, the rasterised anatomy, colour effects and the paint planner; `web/paint.ts` replays plans with p5.brush. See [Colour](colour.md) for adding an effect.
 
 Adding a built-in shape, texture, marking, or tail means adding a descriptor and renderer to its trait file. Each descriptor has a stable numeric `id`, stable machine-readable `key`, and human-readable `label`. The controls and CLI lists read the same catalog. Exploration automatically samples new catalog entries. Named presets remain deliberate combinations.
 

@@ -1754,7 +1754,8 @@ function barbel(x: number,y: number,n: number,ang: number,dd=3){
   return o0.concat(o1.slice().reverse());
 }
 
-function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y2: number, arg: FishParams): [Polyline, Drawing]{
+type HeadShape = { outline: Polyline; eye: { x: number; y: number; r: number } };
+function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y2: number, arg: FishParams): [Polyline, Drawing, HeadShape]{
   let n = 20;
   let curve0: Polyline = [];
   let curve1: Polyline = [];
@@ -1923,7 +1924,7 @@ function fish_head(x0: number, y0: number, x1: number, y1: number, x2: number, y
     ...ef,...sh,...sh2,
     ...bbs,
     ...teeth0s,...teeth1s,
-    ...jaw]];
+    ...jaw], { outline, eye: { x: ex, y: ey, r: arg.eye_size } }];
 }
 
 function deviate(n: number){
@@ -1932,6 +1933,12 @@ function deviate(n: number){
 
 
 function fish(arg: FishParams, extensions: FishTraitExtensions = {}){
+  return fish_parts(arg, extensions).strokes;
+}
+
+/** The drawing plus which group each stroke belongs to and the regions the
+ * colour pass needs. Nothing here consumes extra randomness. */
+function fish_parts(arg: FishParams, extensions: FishTraitExtensions = {}){
   const traits = resolveTraits(extensions);
   const shape = traitById(traits.shapes, arg.body_curve_type);
   const texture = traitById(traits.textures, arg.scale_type);
@@ -2125,9 +2132,9 @@ function fish(arg: FishParams, extensions: FishTraitExtensions = {}){
 
   f4 = clip_multi(f4,c1).false;
 
-  let f5_curve: Polyline, c5: Polyline, f5: Drawing = [];
+  let f5_curve: Polyline, c5: Polyline = [], f5: Drawing = [];
   if (arg.finlet_type == 5){
-    f5 = ribbonFin(context);
+    ;({ outline: c5, strokes: f5 } = ribbonFin(context));
     f0 = []; f3 = []; f4 = [];
   }else if (arg.finlet_type == 4){
     const secondStart = Math.min(22, arg.dorsal_end + 1);
@@ -2162,11 +2169,11 @@ function fish(arg: FishParams, extensions: FishTraitExtensions = {}){
   if (!arg.has_dorsal) { f0 = []; c0 = []; }
   if (!arg.has_pelvic) f2 = [];
   if (!arg.has_anal) f3 = [];
-  let cf,fh;
+  let cf,fh,head_shape;
   if (arg.neck_type == 0){
-    ;[cf,fh] = fish_head(50-arg.head_length,150+arg.nose_height,...curve0[6],...curve1[5],arg);
+    ;[cf,fh,head_shape] = fish_head(50-arg.head_length,150+arg.nose_height,...curve0[6],...curve1[5],arg);
   }else{
-    ;[cf,fh] = fish_head(50-arg.head_length,150+arg.nose_height,...curve0[5],...curve1[6],arg);
+    ;[cf,fh,head_shape] = fish_head(50-arg.head_length,150+arg.nose_height,...curve0[5],...curve1[6],arg);
   }
   bd = clip_multi(bd,cf).false;
   
@@ -2211,24 +2218,30 @@ function fish(arg: FishParams, extensions: FishTraitExtensions = {}){
   details = clip_multi(details, cf).false;
   details = clip_multi(details, c1).false;
 
-  return bd.
-  concat(f0).
-  concat(f1).
-  concat(f2).
-  concat(f3).
-  concat(f4).
-  concat(f5).
-  concat(fh).
-  concat(sh).
-  concat(sh2).
-  concat(sh3).
-  concat(details).
-  // concat([cf]).
-  concat();
+  const groups: [StrokeTag, Drawing][] = [
+    ['texture', bd], ['ink', f0], ['ink', f1], ['ink', f2], ['ink', f3], ['ink', f4], ['ink', f5],
+    ['ink', fh], ['texture', sh], ['ink', sh2], ['ink', sh3], ['ink', details],
+  ];
+  const strokes: Drawing = [];
+  const tags: StrokeTag[] = [];
+  for (const [tag, lines] of groups) for (const line of lines) { strokes.push(line); tags.push(tag); }
+  const medianFins = arg.finlet_type !== 5;
+  const anatomy: FishAnatomy = {
+    body: { top: context.body.top, bottom: context.body.bottom }, outline, head: head_shape.outline, headMask: cf, eye: head_shape.eye,
+    fins: {
+      dorsal: medianFins && arg.has_dorsal ? c0 : [],
+      pectoral: c1,
+      pelvic: arg.has_pelvic ? c2 : [],
+      anal: medianFins && arg.has_anal ? c3 : [],
+      tail: medianFins ? c4 : [],
+      accessory: c5,
+    },
+  };
+  return { strokes, tags, anatomy };
 }
 
-function reframe(polylines: Drawing, pad=20, text: string | null = null){
-  
+/** The fit-to-frame transform reframe applies, so other layers can share it. */
+function frame_transform(polylines: Drawing, pad=20, text: string | null = null){
   let W = (500-pad*2);
   let H = (300-pad*2) - (text?10:0);
   let bbox = get_bbox(polylines.flat());
@@ -2237,12 +2250,14 @@ function reframe(polylines: Drawing, pad=20, text: string | null = null){
   let s = Math.min(sw,sh);
   let px = (W-bbox.w*s)/2;
   let py = (H-bbox.h*s)/2;
+  return ([x,y]: Point): Point => [(x - bbox.x) * s + px+pad, (y - bbox.y) * s + py+pad];
+}
+
+function reframe(polylines: Drawing, pad=20, text: string | null = null){
+  const to_frame = frame_transform(polylines, pad, text);
   for (let i = 0; i < polylines.length; i++){
     for (let j = 0; j < polylines[i].length; j++){
-      let [x,y] = polylines[i][j];
-      x = (x - bbox.x) * s + px+pad;
-      y = (y - bbox.y) * s + py+pad;
-      polylines[i][j] = [x,y];
+      polylines[i][j] = to_frame(polylines[i][j]);
     }
   }
   if (!text) return polylines;
@@ -2253,7 +2268,8 @@ function reframe(polylines: Drawing, pad=20, text: string | null = null){
   return polylines;
 }
 
-function cleanup(polylines: Drawing){
+function cleanup(polylines: Drawing, tags?: unknown[]){
+  const remove = (i: number) => { polylines.splice(i,1); tags?.splice(i,1); };
   for (let i = polylines.length-1; i>=0; i--){
     polylines[i] = approx_poly_dp(polylines[i],0.1);
     for (let j = 0; j < polylines[i].length; j++){
@@ -2262,12 +2278,12 @@ function cleanup(polylines: Drawing){
       }
     }
     if (polylines[i].length < 2){
-      polylines.splice(i,1);
+      remove(i);
       continue;
     }
     if (polylines[i].length == 2){
       if (dist(...polylines[i][0],...polylines[i][1])<0.9){
-        polylines.splice(i,1);
+        remove(i);
         continue;
       }
     }
@@ -2631,13 +2647,47 @@ export function parameters_for_seed(seed: string): FishParams {
   return generate_params();
 }
 
+/** Where the colour pass may paint, in the same frame as the returned polylines. */
+export interface FishAnatomy {
+  /** Dorsal and ventral trunk edges, 32 corresponding points each (see bodyFrame). */
+  body: { top: Polyline; bottom: Polyline };
+  /** Trunk silhouette, including any adipose fin. */
+  outline: Polyline;
+  head: Polyline;
+  /** The region the head masks off the trunk. */
+  headMask: Polyline;
+  eye: { x: number; y: number; r: number };
+  fins: Record<'dorsal' | 'pectoral' | 'pelvic' | 'anal' | 'tail' | 'accessory', Polyline>;
+}
+
+/** Each stroke's role: scale texture, ink (outlines, fins, face, markings) or the caption. */
+export type StrokeTag = 'texture' | 'ink' | 'caption';
+
+function frame_anatomy(a: FishAnatomy, to_frame: (p: Point) => Point): FishAnatomy {
+  const map = (poly: Polyline) => poly.map(to_frame);
+  const [ex, ey] = to_frame([a.eye.x, a.eye.y]);
+  const [rx] = to_frame([a.eye.x + a.eye.r, a.eye.y]);
+  return {
+    body: { top: map(a.body.top), bottom: map(a.body.bottom) },
+    outline: map(a.outline), head: map(a.head), headMask: map(a.headMask),
+    eye: { x: ex, y: ey, r: rx - ex },
+    fins: Object.fromEntries(Object.entries(a.fins).map(([k, v]) => [k, map(v)])) as FishAnatomy['fins'],
+  };
+}
+
 export function generate(seed: string, overrides: Partial<FishParams> = {}, extensions: FishTraitExtensions = {}): {
-  seed: string; params: FishParams; polylines: Drawing;
+  seed: string; params: FishParams; polylines: Drawing; tags: StrokeTag[]; anatomy: FishAnatomy;
 } {
   const params = { ...parameters_for_seed(seed), ...overrides };
   // Head construction can adjust the eye size; keep the requested parameters intact.
-  const drawing = fish({ ...params }, extensions);
-  return { seed, params, polylines: cleanup(reframe(drawing, 20, seed + '.')) };
+  const parts = fish_parts({ ...params }, extensions);
+  const to_frame = frame_transform(parts.strokes, 20, seed + '.');
+  const anatomy = frame_anatomy(parts.anatomy, to_frame);
+  const tags = [...parts.tags] as StrokeTag[];
+  const polylines = reframe(parts.strokes, 20, seed + '.');
+  while (tags.length < polylines.length) tags.push('caption');
+  cleanup(polylines, tags);
+  return { seed, params, polylines, tags, anatomy };
 }
 
 function main(seed?: string): Drawing {

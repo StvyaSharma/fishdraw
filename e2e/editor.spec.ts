@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { fishInspirations, generate_preset, parameters_for_preset } from '../presets.ts';
 import { binomen, parameters_for_seed } from '../fishdraw.ts';
 import { serialize } from '../formats.ts';
@@ -19,10 +19,66 @@ async function expectPreset(drawing: Locator, presetId: string, seed = 'Biggus f
   }
 }
 
+/** The editor paints by default; the line-drawing tests switch to the SVG view. */
+async function showLineDrawing(page: Page) {
+  await page.getByRole('radiogroup', { name: 'Painted', exact: true }).getByRole('radio', { name: 'Off', exact: true }).click();
+}
+
+async function downloadPng(page: Page) {
+  const pending = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download', exact: true }).click();
+  const download = await pending;
+  expect(download.suggestedFilename()).toMatch(/\.png$/);
+  return new Uint8Array(await Bun.file((await download.path())!).arrayBuffer());
+}
+
+test('paints the fish with p5.brush, follows the colour panel, and exports PNG', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  const painting = page.locator('.painting');
+  await expect(page.getByRole('img', { name: 'Watercolour painting of a procedural fish named Biggus fishus' })).toBeVisible();
+  await expect(painting).toHaveAttribute('aria-busy', 'false', { timeout: 60_000 });
+
+  await page.getByText('Export', { exact: true }).click();
+  const first = await downloadPng(page);
+  expect([...first.slice(1, 4)].map(c => String.fromCharCode(c)).join('')).toBe('PNG');
+  // A painted sheet is far from blank: measure how many pixels differ from the paper.
+  const inked = await page.evaluate(async bytes => {
+    const bitmap = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type: 'image/png' }));
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const context = canvas.getContext('2d')!;
+    context.drawImage(bitmap, 0, 0);
+    const { data } = context.getImageData(0, 0, bitmap.width, bitmap.height);
+    let marked = 0;
+    for (let i = 0; i < data.length; i += 4) if (Math.abs(data[i] - 255) + Math.abs(data[i + 1] - 250) + Math.abs(data[i + 2] - 240) > 40) marked++;
+    return { width: bitmap.width, fraction: marked / (data.length / 4) };
+  }, [...first]);
+  expect(inked.width).toBe(1040);
+  expect(inked.fraction).toBeGreaterThan(0.05);
+
+  // Repainting the same genes gives the same picture; a new palette changes it.
+  await page.getByRole('button', { name: 'Reset colour', exact: true }).click();
+  await expect(painting).toHaveAttribute('aria-busy', 'false', { timeout: 60_000 });
+  expect(await downloadPng(page)).toEqual(first);
+  await page.getByText('Family', { exact: true }).click();
+  const family = page.getByRole('option', { name: 'Rose & violet · deep reef', exact: true });
+  if (await family.getAttribute('aria-selected') === 'true') await page.getByRole('option', { name: 'Sand & umber · bottom', exact: true }).click();
+  else await family.click();
+  // The repaint follows a deferred update, so wait for the new picture itself.
+  await expect.poll(async () => JSON.stringify([...await downloadPng(page)]) !== JSON.stringify([...first]), { timeout: 60_000 }).toBe(true);
+
+  await showLineDrawing(page);
+  await expect(page.getByRole('img', { name: /Procedural fish drawing/ })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test('DialKit controls, seeds, reset, and exports work in production', async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
+  await showLineDrawing(page);
   const drawing = page.getByRole('img', { name: /Procedural fish drawing/ });
   await expect(drawing).toBeVisible();
   await expect(page.locator('header, footer, h1, aside')).toHaveCount(0);
@@ -104,6 +160,7 @@ test('randomise traits picks a new combination and keeps controls, reset, and ex
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
+  await showLineDrawing(page);
   const drawing = page.getByRole('img', { name: /Procedural fish drawing/ });
   await page.getByText('Inspiration', { exact: true }).click();
   await page.getByRole('option', { name: 'Florida gar', exact: true }).click();
@@ -146,6 +203,7 @@ test('inspirations, independent traits, reset, and export stay in sync', async (
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
+  await showLineDrawing(page);
   const drawing = page.getByRole('img', { name: /Procedural fish drawing/ });
   for (const preset of fishInspirations.filter(p => p.id !== 'procedural')) {
     const before = await drawing.getAttribute('src');

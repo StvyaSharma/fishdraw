@@ -19,6 +19,8 @@ Open the address printed in the terminal (by default `http://127.0.0.1:3000`). S
 
 Use the native DialKit panel to enter a seed and click Draw, or click Random. DialKit controls adjust its body, scales, pattern, fins, tail, eyes, jaw, teeth, and barbels. Reset restores that seed’s starting parameters. A new seed starts with its own parameters.
 
+The editor **paints** each fish in watercolour with [p5.brush](https://github.com/acamposuribe/p5.brush); switch **Painted** off for the plotter-ready line drawing. Every seed carries its own colour genes: one of eight palette families, countershading, a lateral sheen, a pigment pattern grown by a pigment-cell simulation (spots, stripes, bars, labyrinths, a reticulated net) or soft mottling, fin tints and margins, an eye bar, speckle, and how wet and granular the paint is. The **Colour** panel shows every gene, grouped by effect; Reset colour restores the seed's own. Each inspiration fixes the colouring it is known for, so the lionfish is red and barred and the butterflyfish yellow with an eye bar. See [the colour notes](docs/colour.md) for the biology behind each effect and how to add your own.
+
 Choose an **Inspiration** and click **Apply Inspiration** (or Draw). There are eight researched starting points: bluefin tuna, foureye butterflyfish, reticulated moray, northern pike, Atlantic sturgeon, red lionfish, channel catfish, and Florida gar. These are artistic interpretations with simplified anatomy, not species identification drawings. Their sources and limitations are recorded in [the morphology research](docs/fish-morphology.md).
 
 **Explore all traits** makes reproducible combinations from the entire catalog. **Original procedural fish** preserves the original seeded drawings. Random generates a new name using the selected inspiration. Each named inspiration keeps its anatomical family while the seed varies body proportions, fin lengths and placement, head proportions, and texture density. You can freely mix and edit every starting point, and Reset restores it.
@@ -27,9 +29,9 @@ Click **Randomise traits** to immediately pick a new combination from the full c
 
 The expanded catalog includes six body profiles, ten surface treatments, eleven marking styles, and nine tail shapes. Smooth-edged and comb-edged scales, diamond armor, denticle-inspired ticks, and scute rows are separate from pigment markings. Combine longitudinal stripes, chevrons, reticulation, ringed spots, an ocellus, and dark-back hatching with any surface. Additional controls cover complete or incomplete lateral lines, individual fin visibility, dorsal/anal placement, two dorsals with finlets, adipose fins, a continuous eel margin, snout proportions, terminal/subterminal mouths, and chin or under-snout barbels.
 
-Download SVG, animated SVG (SMIL), JSON, CSV, or PostScript. The Export folder contains the format, animation speed, and Download action. Generation runs locally in your browser; drawings are not uploaded.
+Download a PNG of the painting (or of the line drawing when Painted is off), or the line drawing as SVG, animated SVG (SMIL), JSON, CSV, or PostScript. The Export folder contains the format, animation speed, and Download action. Generation runs locally in your browser; drawings are not uploaded.
 
-The editor uses React, DialKit, and Motion. The drawing engine itself has no runtime dependencies.
+The editor uses React, DialKit, Motion, and p5.brush (its standalone WebGL2 build, so p5.js isn't required). The drawing engine and the colour planner have no runtime dependencies.
 
 ## CLI
 
@@ -102,7 +104,7 @@ bun run check
 
 `bun run build` creates a standalone static editor in `dist/`, suitable for static hosting. `bun run start` runs the Bun server in production mode using the source HTML entry point. DialKit is explicitly enabled in production because the controls are part of the editor.
 
-Tests cover original-output regression fixtures, deterministic seeds, parameter variants and range extremes, finite coordinates, exports, and CLI validation. Browser tests cover desktop and mobile DialKit controls and downloads against the production Bun server.
+Colour tests cover gene ranges and independence, palettes, contour tracing, plan validity and determinism, every pigment pattern, effect isolation and extension, and the inspirations' colour hints. A browser test paints a fish, checks the repaint is identical, changes the palette, and exports PNG. Tests cover original-output regression fixtures, deterministic seeds, parameter variants and range extremes, finite coordinates, exports, and CLI validation. Browser tests cover desktop and mobile DialKit controls and downloads against the production Bun server.
 
 The expanded tests also cover every registered trait, all eight inspiration presets at extreme body sizes, extension isolation, sensory details, fin visibility, preset switching/reset, and equality between customized browser previews and downloads.
 
