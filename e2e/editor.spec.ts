@@ -19,9 +19,14 @@ async function expectPreset(drawing: Locator, presetId: string, seed = 'Biggus f
   }
 }
 
+async function chooseView(page: Page, label: string) {
+  await page.getByText('View', { exact: true }).click();
+  await page.getByRole('option', { name: label, exact: true }).click();
+}
+
 /** The editor paints by default; the line-drawing tests switch to the SVG view. */
 async function showLineDrawing(page: Page) {
-  await page.getByRole('radiogroup', { name: 'Painted', exact: true }).getByRole('radio', { name: 'Off', exact: true }).click();
+  await chooseView(page, 'Line drawing');
 }
 
 async function downloadPng(page: Page) {
@@ -71,6 +76,26 @@ test('paints the fish with p5.brush, follows the colour panel, and exports PNG',
 
   await showLineDrawing(page);
   await expect(page.getByRole('img', { name: /Procedural fish drawing/ })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('engraved colour previews and exports one pen per pigment', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await chooseView(page, 'Engraved colour · plotter');
+  const drawing = page.getByRole('img', { name: 'Procedural fish drawing named Biggus fishus, engraved in colour' });
+  await expect(drawing).toBeVisible();
+  const pens = (svg: string) => new Set([...svg.matchAll(/stroke="(#[0-9a-f]{6})"/g)].map(m => m[1]));
+  const preview = decodeURIComponent((await drawing.getAttribute('src'))!.split(',')[1]);
+  expect(pens(preview).size).toBeGreaterThan(3);
+  await page.getByText('Export', { exact: true }).click();
+  await page.getByText('Format', { exact: true }).click();
+  await page.getByRole('option', { name: /^svg$/i }).click();
+  const pending = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download', exact: true }).click();
+  const svg = await Bun.file((await (await pending).path())!).text();
+  expect(svg).toBe(preview);
   expect(errors).toEqual([]);
 });
 

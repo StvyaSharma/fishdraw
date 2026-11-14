@@ -798,21 +798,36 @@ function poissondisk(W: number, H: number, r: number, samples: Polyline){
 }
 
 
-function draw_svg(polylines: Drawing){
-  let o = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="320">`
-  o += `<rect x="0" y="0" width="520" height="320" fill="floralwhite"/><rect x="10" y="10" width="500" height="300" stroke="black" stroke-width="1" fill="none"/><path stroke="black" stroke-width="1" fill="none" stroke-linecap="round" stroke-linejoin="round" d="`
-  for (let i = 0; i < polylines.length; i++){
-    o += '\nM ';
-    for (let j = 0; j < polylines[i].length; j++){
-      let [x,y] = polylines[i][j];
-      o += `${(~~((x+10)*100)) /100} ${(~~((y+10)*100)) /100} `;
-    }
-  }
-  o += `\n"/></svg>`
-  return o;
+/** Group strokes by pen, preserving first-use order so colour sits beneath ink. */
+function pen_layers(polylines: Drawing, colors?: string[]){
+  const layers = new Map<string, Drawing>();
+  polylines.forEach((line, i) => {
+    const color = colors?.[i] ?? '#000000';
+    if (!layers.has(color)) layers.set(color, []);
+    layers.get(color)!.push(line);
+  });
+  return [...layers];
 }
 
-function draw_svg_anim(polylines: Drawing, speed: number){
+function draw_svg(polylines: Drawing, colors?: string[]){
+  let o = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="320">`
+  o += `<rect x="0" y="0" width="520" height="320" fill="floralwhite"/><rect x="10" y="10" width="500" height="300" stroke="black" stroke-width="1" fill="none"/>`
+  for (const [color, lines] of pen_layers(polylines, colors)){
+    const ink = color === '#000000';
+    o += `<path stroke="${ink ? 'black' : color}" stroke-width="${ink ? 1 : 0.7}" fill="none" stroke-linecap="round" stroke-linejoin="round" d="`;
+    for (let i = 0; i < lines.length; i++){
+      o += '\nM ';
+      for (let j = 0; j < lines[i].length; j++){
+        let [x,y] = lines[i][j];
+        o += `${(~~((x+10)*100)) /100} ${(~~((y+10)*100)) /100} `;
+      }
+    }
+    o += `\n"/>`;
+  }
+  return o + `</svg>`;
+}
+
+function draw_svg_anim(polylines: Drawing, speed: number, colors?: string[]){
   let o = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="320">`;
   o += `<rect x="0" y="0" width="520" height="320" fill="floralwhite"/><rect x="10" y="10" width="500" height="300" stroke="black" stroke-width="1" fill="none"/>`
   let lengths = [];
@@ -834,7 +849,7 @@ function draw_svg_anim(polylines: Drawing, speed: number){
     let l = lengths[i];
     o += `
     <path 
-      stroke="black" 
+      stroke="${colors?.[i] ?? 'black'}" 
       stroke-width="1" 
       fill="none" 
       stroke-dasharray="${l}"
@@ -862,7 +877,7 @@ function draw_svg_anim(polylines: Drawing, speed: number){
   return o;
 }
 
-function draw_ps(polylines: Drawing){
+function draw_ps(polylines: Drawing, colors?: string[]){
   let o = `%!PS-Adobe-3.0 EPSF-3.0
 %%BoundingBox: 0 0 520 320
 1 setlinewidth
@@ -878,7 +893,13 @@ function draw_ps(polylines: Drawing){
 closepath
 F
 `;
+  let pen = '';
   for (let i = 0; i < polylines.length; i++){
+    const color = colors?.[i] ?? '#000000';
+    if (colors && color !== pen){
+      pen = color;
+      o += [1,3,5].map(k => (parseInt(color.slice(k,k+2),16)/255).toFixed(3)).join(' ') + ' setrgbcolor\n';
+    }
     for (let j = 0; j < polylines[i].length; j++){
       let [x,y] = polylines[i][j];
       o += `${(~~((x+10)*100)) /100} ${(~~((310-y)*100)) /100} `;
