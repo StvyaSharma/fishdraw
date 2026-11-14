@@ -2,8 +2,8 @@ import type { Drawing, Polyline, Point } from '../fishdraw.ts';
 import { path, type TraitContext } from './types.ts';
 import { ink } from './organic.ts';
 
-/** Continuous median fin margin for eel-inspired silhouettes. */
-export function ribbonFin(c: TraitContext): Drawing {
+/** Continuous median fin for eel-inspired silhouettes: its strokes, and its margin as an outline for colour. */
+export function ribbonFin(c: TraitContext): { outline: Polyline; strokes: Drawing } {
   const { body, params: p, random, noise } = c;
   const start = 0.16 + random() * 0.1;
   const lowerEnd = 0.3 + random() * 0.1;
@@ -49,7 +49,7 @@ export function ribbonFin(c: TraitContext): Drawing {
         root[1] + (edge[1] - root[1]) * s * length]), 0.6));
     }
   }
-  return strokes;
+  return { outline: margin, strokes };
 }
 
 export const finArrangements = [

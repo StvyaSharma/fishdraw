@@ -2134,7 +2134,7 @@ function fish_parts(arg: FishParams, extensions: FishTraitExtensions = {}){
 
   let f5_curve: Polyline, c5: Polyline = [], f5: Drawing = [];
   if (arg.finlet_type == 5){
-    f5 = ribbonFin(context);
+    ;({ outline: c5, strokes: f5 } = ribbonFin(context));
     f0 = []; f3 = []; f4 = [];
   }else if (arg.finlet_type == 4){
     const secondStart = Math.min(22, arg.dorsal_end + 1);
