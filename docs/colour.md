@@ -20,6 +20,7 @@ anatomy   fish → masks + (u, v) fields   colour/anatomy.ts colourAnatomy()
 effects   (genes, anatomy) → layers      colour/effects/*.ts
 plan      ordered layers + dry steps     colour/index.ts   colourPlan()
 render    plan → p5.brush calls          web/paint.ts      paint()
+   or     plan → coloured pen strokes    colour/engrave.ts engrave()
 ```
 
 1. **Genes.** Each gene declares its control and its distribution together (`GeneSpec` in `colour/types.ts`): a range with a triangular distribution, a weighted choice, or a toggle with a probability. Genes are flat numbers keyed `group.gene` (`pigment.pattern`, `palette.family`), so they serialise and override like the line-work parameters. Every group samples from its own stream, `stream(seed, 'genes:<group>')`, so adding an effect never changes another effect's genes.
@@ -27,6 +28,10 @@ render    plan → p5.brush calls          web/paint.ts      paint()
 3. **Effects.** An effect turns its genes into scalar fields over that grid and contours them into wash shapes with marching squares. Because fields are zero outside their mask, every shape is clipped to the anatomy by construction. Smooth gradients are stacked glazes: contours at rising levels, each a transparent wash, the way tone builds on paper. Holes are returned separately, because a wash over a hole would fill it.
 4. **Plan.** Each effect returns layers tagged with a **stage**: ground, shade, glaze, pattern, fins, detail, ink. The planner orders them by stage and inserts a **dry** step between stages. Paper wetness decides whether stages run together: above 0.5 the shading feathers into the ground wash, above 0.8 the pattern also bleeds into the wet shading.
 5. **Render.** `web/paint.ts` is the only module that imports p5.brush. Washes use `fill()` with bleed, granulation, edge ring and pigment split; strokes use `set()`; dry steps call `render()`. Paint is laid in slices of about one frame, so the editor stays responsive, and an outdated paint is abandoned as soon as the controls change. The canvas is seeded from the fish's name, so the same plan always paints the same picture.
+
+## Engraved colour
+
+`engrave(plan)` is a second renderer for the same plan, for plotters and vector output. Every wash and glaze becomes parallel hatching in its own pigment, clipped exactly to the wash shape. Tone is line spacing: 5.5 units apart for the faintest wash, 1.4 at full strength. Each pigment keeps one hatch direction, and stacked glazes rotate and shift their phase, so layers cross the way an engraver builds depth instead of drawing over each other. Strokes and dabs pass through as lines, and the ink comes last, over the colour. The result is a `Drawing` plus a pen colour per stroke, which every export format understands. The CLI's `--colour` flag and the editor's **Engraved colour** view both use it, so coloured vector output needs no browser.
 
 ## The effects
 
@@ -82,4 +87,4 @@ Append it to `colourEffects` in `colour/index.ts`, or pass your own list to `col
 - Colour never changes the line work. Colour genes and paint come from their own streams; the original regression drawings are unchanged.
 - A seed's plan is identical across calls; removing an effect leaves every other layer identical (`tests/colour.test.ts`).
 - Every wash lies inside the sheet, every colour is a valid hex value, and the plan never starts or ends with a dry step.
-- Coloured output is a raster painting, exported as PNG. The vector formats (SVG, animated SVG, JSON, CSV, PostScript) still export the line drawing for plotting.
+- The watercolour is a raster painting, exported as PNG. The engraved colour is lines only, one pen per pigment, in every vector format.

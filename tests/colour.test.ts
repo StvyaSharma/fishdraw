@@ -2,7 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { generate } from '../fishdraw.ts';
 import { colour_for_preset, fishPresets, parameters_for_preset } from '../presets.ts';
 import { colourEffects, colourGenes, colourPlan, geneGroups, type ColourEffect, type PlanStep } from '../colour/index.ts';
-import { Raster } from '../colour/anatomy.ts';
+import { polygonTest, Raster } from '../colour/anatomy.ts';
+import { engrave, hatchPolygon } from '../colour/engrave.ts';
+import { serialize } from '../formats.ts';
+import { run } from '../cli.ts';
 import { paletteFamilies, palette } from '../colour/palette.ts';
 import { Stage } from '../colour/types.ts';
 import { colourControlConfig, colourOverrides } from '../web/colourControls.ts';
@@ -171,5 +174,41 @@ describe('colour panel', () => {
       Object.entries(folder).filter(([k]) => !k.startsWith('_')).map(([k, v]) => [k, Array.isArray(v) ? v[0] : typeof v === 'object' ? (v as { default: string }).default : v]),
     )]));
     expect(colourOverrides(values)).toEqual(genes);
+  });
+});
+
+describe('engraved colour', () => {
+
+  test('hatching stays inside its polygon, including concave ones', () => {
+    const notch: [number, number][] = [[0, 0], [40, 0], [40, 40], [20, 15], [0, 40]];
+    const inside = polygonTest(notch);
+    const lines = hatchPolygon(notch, 0.7, 2);
+    expect(lines.length).toBeGreaterThan(10);
+    for (const [[x0, y0], [x1, y1]] of lines) expect(inside((x0 + x1) / 2, (y0 + y1) / 2)).toBe(true);
+  });
+
+  test('turns a plan into repeatable pen strokes with a colour each', () => {
+    const plan = planFor('Salmo salar');
+    const a = engrave(plan), b = engrave(planFor('Salmo salar'));
+    expect(a).toEqual(b);
+    expect(a.colors.length).toBe(a.strokes.length);
+    for (const c of new Set(a.colors)) expect(c).toMatch(hex);
+    expect(new Set(a.colors).size).toBeGreaterThan(3);
+    // Ink is engraved last, over the colour.
+    expect(a.colors.at(-1)).toBe(plan.palette.ink);
+  });
+
+  test('exports one SVG path per pen, and colour per stroke in JSON', () => {
+    const { strokes, colors } = engrave(planFor('Esox lucius'));
+    const svg = serialize(strokes, 'svg', 1, colors);
+    expect([...svg.matchAll(/<path /g)].length).toBe(new Set(colors).size);
+    const json = JSON.parse(serialize(strokes, 'json', 1, colors));
+    expect(json[0]).toEqual({ color: colors[0], points: strokes[0] });
+  });
+
+  test('is available from the CLI', () => {
+    const svg = run(['--seed', 'Reef specimen', '--preset', 'butterflyfish', '--colour']);
+    expect(new Set([...svg.matchAll(/stroke="(#[0-9a-f]{6})"/g)].map(m => m[1])).size).toBeGreaterThan(3);
+    expect(run(['--seed', 'Reef specimen', '--preset', 'butterflyfish'])).not.toContain('stroke="#');
   });
 });

@@ -7,6 +7,7 @@ import { isOutputFormat, serialize } from '../formats.ts';
 import { controlConfig, parameterOverrides } from './controls.ts';
 import { colourControlConfig, colourOverrides } from './colourControls.ts';
 import { colourPlan, type PaintPlan } from '../colour/index.ts';
+import { engrave } from '../colour/engrave.ts';
 import { paint, paintCanvas } from './paint.ts';
 import 'dialkit/styles.css';
 import './styles.css';
@@ -38,7 +39,13 @@ function Painting({ plan, seed }: { plan: PaintPlan; seed: string }) {
   return <div ref={host} className="painting" aria-busy={busy} />;
 }
 
-function FishEditor({ seed, presetId, painted }: { seed: string; presetId: string; painted: boolean }) {
+type View = 'watercolour' | 'engraved' | 'lines';
+const views: readonly View[] = ['watercolour', 'engraved', 'lines'];
+/** `?view=lines` (or `engraved`) opens the editor in that view. */
+const initialView: View = views.find(v => v === new URLSearchParams(location.search).get('view')) ?? 'watercolour';
+
+function FishEditor({ seed, presetId, view }: { seed: string; presetId: string; view: View }) {
+  const painted = view === 'watercolour';
   const baseParams = useMemo(() => parameters_for_preset(seed, presetId), [seed, presetId]);
   const config = useMemo(() => ({
     ...controlConfig(baseParams),
@@ -69,10 +76,11 @@ function FishEditor({ seed, presetId, painted }: { seed: string; presetId: strin
           return;
         }
         if (!isOutputFormat(format)) return;
-        const fish = generate(seed, { ...baseParams, ...parameterOverrides(values) });
+        const art = artwork(values, colour.getValues() as Record<string, unknown>, view === 'lines' ? 'lines' : 'engraved');
         const extension = format === 'smil' ? 'svg' : format;
         const type = format === 'svg' || format === 'smil' ? 'image/svg+xml' : format === 'json' ? 'application/json' : 'text/plain';
-        download(serialize(fish.polylines, format, values.export.speed), `${filename}.${extension}`, type);
+        // Coloured views export the engraved colour: one pen per pigment.
+        download(serialize(art.drawing, format, values.export.speed, art.colors), `${filename}.${extension}`, type);
       }
     },
   });
@@ -86,26 +94,31 @@ function FishEditor({ seed, presetId, painted }: { seed: string; presetId: strin
   });
   const values = useDeferredValue(dial.values);
   const colourValues = useDeferredValue(colour.values) as Record<string, unknown>;
+  function artwork(anatomy: typeof values, colours: Record<string, unknown>, as: View) {
+    const fish = generate(seed, { ...baseParams, ...parameterOverrides(anatomy) });
+    if (as === 'lines') return { plan: null, drawing: fish.polylines, colors: undefined };
+    const plan = colourPlan(fish, { ...baseGenes, ...colourOverrides(colours) }, seed);
+    if (as === 'watercolour') return { plan, drawing: fish.polylines, colors: undefined };
+    const engraving = engrave(plan);
+    return { plan: null, drawing: engraving.strokes, colors: engraving.colors };
+  }
   const result = useMemo(() => {
     try {
-      const fish = generate(seed, { ...baseParams, ...parameterOverrides(values) });
-      if (painted) {
-        const plan = colourPlan(fish, { ...baseGenes, ...colourOverrides(colourValues) }, seed);
-        return { plan, image: '', error: null };
-      }
-      const svg = serialize(fish.polylines, 'svg');
+      const art = artwork(values, colourValues, view);
+      if (art.plan) return { plan: art.plan, image: '', error: null };
+      const svg = serialize(art.drawing, 'svg', 1, art.colors);
       return { plan: null, image: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, error: null };
     } catch (error) {
       console.error(error);
       return { plan: null, image: '', error: 'Unable to draw this combination. Reset the parameters or try another seed.' };
     }
-  }, [seed, baseParams, values, painted, baseGenes, colourValues]);
+  }, [seed, baseParams, values, view, baseGenes, colourValues]);
 
   if (result.error) return <p role="alert">{result.error}</p>;
   if (result.plan) return <Painting plan={result.plan} seed={seed} />;
   return <img
     src={result.image}
-    alt={`Procedural fish drawing named ${seed}`}
+    alt={`Procedural fish drawing named ${seed}${view === 'engraved' ? ', engraved in colour' : ''}`}
     width="520"
     height="320"
     aria-busy={values !== dial.values}
@@ -118,7 +131,11 @@ function App() {
     seed: { type: 'text', default: 'Biggus fishus' },
     inspiration: { type: 'select', options: fishInspirations.map(p => ({ value: p.id, label: p.label })), default: 'procedural' },
     applyInspiration: { type: 'action' },
-    painted: true,
+    view: { type: 'select', options: [
+      { value: 'watercolour', label: 'Watercolour · p5.brush' },
+      { value: 'engraved', label: 'Engraved colour · plotter' },
+      { value: 'lines', label: 'Line drawing' },
+    ], default: initialView },
     draw: { type: 'action' },
     random: { type: 'action' },
     randomiseTraits: { type: 'action', label: 'Randomise traits' },
@@ -139,7 +156,7 @@ function App() {
     },
   });
   return <>
-    <FishEditor key={specimen.revision} seed={specimen.seed} presetId={specimen.presetId} painted={dial.values.painted} />
+    <FishEditor key={specimen.revision} seed={specimen.seed} presetId={specimen.presetId} view={dial.values.view as View} />
     <DialRoot productionEnabled versions="menu" />
   </>;
 }
