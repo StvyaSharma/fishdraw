@@ -69,14 +69,23 @@ function layer(step: PaintLayer) {
   }
 }
 
-/** Paint a plan onto the shared canvas. The same plan and seed paint the same picture. */
-export function paint(plan: PaintPlan, seed: string) {
-  if (!canvas) return;
+/** Paint a plan onto the shared canvas, in slices of about one frame so the
+ * page stays responsive. Aborting stops between layers; the next paint clears
+ * the sheet. Resolves true when the painting finished. The same plan and seed
+ * paint the same picture. */
+export async function paint(plan: PaintPlan, seed: string, signal?: AbortSignal): Promise<boolean> {
+  if (!canvas) return false;
   brush.load(canvas);
   brush.seed(seed);
   brush.noiseSeed(seed);
   brush.clear(plan.paper);
+  let slice = performance.now();
   for (const step of plan.steps) {
+    if (performance.now() - slice > 12) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (signal?.aborted) return false;
+      slice = performance.now();
+    }
     if (step.kind === 'dry') brush.render();
     else layer(step);
   }
@@ -84,4 +93,5 @@ export function paint(plan: PaintPlan, seed: string) {
   brush.set('fish-ink', plan.palette.ink, 0.6);
   brush.rect(OX, OY, 500, 300);
   brush.render();
+  return true;
 }

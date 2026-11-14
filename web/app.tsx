@@ -31,14 +31,14 @@ function Painting({ plan, seed }: { plan: PaintPlan; seed: string }) {
     const canvas = paintCanvas(host.current);
     canvas.setAttribute('aria-label', `Watercolour painting of a procedural fish named ${seed}`);
     setBusy(true);
-    // Let the busy state render before the (synchronous) painting blocks.
-    const frame = requestAnimationFrame(() => { paint(plan, seed); setBusy(false); });
-    return () => cancelAnimationFrame(frame);
+    const controller = new AbortController();
+    paint(plan, seed, controller.signal).then(done => { if (done) setBusy(false); });
+    return () => controller.abort();
   }, [plan, seed]);
   return <div ref={host} className="painting" aria-busy={busy} />;
 }
 
-function FishEditor({ seed, presetId }: { seed: string; presetId: string }) {
+function FishEditor({ seed, presetId, painted }: { seed: string; presetId: string; painted: boolean }) {
   const baseParams = useMemo(() => parameters_for_preset(seed, presetId), [seed, presetId]);
   const config = useMemo(() => ({
     ...controlConfig(baseParams),
@@ -50,14 +50,6 @@ function FishEditor({ seed, presetId }: { seed: string; presetId: string }) {
       download: { type: 'action' },
     },
   } satisfies DialConfig), [baseParams]);
-  const baseGenes = useMemo(() => colour_for_preset(seed, presetId), [seed, presetId]);
-  const colour = useDialKitController('Colour', {
-    painted: true,
-    ...colourControlConfig(baseGenes),
-    resetColour: { type: 'action', label: 'Reset colour' },
-  } as DialConfig, {
-    onAction(path) { if (path === 'resetColour') colour.resetValues(); },
-  });
   const dial = useDialKitController('Anatomy', config, {
     onAction(path) {
       if (path === 'reset') dial.resetValues();
@@ -66,7 +58,14 @@ function FishEditor({ seed, presetId }: { seed: string; presetId: string }) {
         const format = values.export.format;
         const filename = seed.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'fish';
         if (format === 'png') {
-          document.querySelector<HTMLCanvasElement>('#fish-painting')?.toBlob(blob => blob && download(blob, `${filename}.png`, 'image/png'), 'image/png');
+          const save = (canvas: HTMLCanvasElement) => canvas.toBlob(blob => blob && download(blob, `${filename}.png`, 'image/png'), 'image/png');
+          if (painted) { const canvas = document.querySelector<HTMLCanvasElement>('#fish-painting'); if (canvas) save(canvas); return; }
+          // The line drawing rasterises at twice its size.
+          const img = document.querySelector<HTMLImageElement>('#root > img');
+          if (!img) return;
+          const canvas = Object.assign(document.createElement('canvas'), { width: 1040, height: 640 });
+          canvas.getContext('2d')!.drawImage(img, 0, 0, 1040, 640);
+          save(canvas);
           return;
         }
         if (!isOutputFormat(format)) return;
@@ -77,9 +76,16 @@ function FishEditor({ seed, presetId }: { seed: string; presetId: string }) {
       }
     },
   });
+  // After Anatomy, so the Colour panel sits below it.
+  const baseGenes = useMemo(() => colour_for_preset(seed, presetId), [seed, presetId]);
+  const colour = useDialKitController('Colour', {
+    ...colourControlConfig(baseGenes),
+    resetColour: { type: 'action', label: 'Reset colour' },
+  } as DialConfig, {
+    onAction(path) { if (path === 'resetColour') colour.resetValues(); },
+  });
   const values = useDeferredValue(dial.values);
   const colourValues = useDeferredValue(colour.values) as Record<string, unknown>;
-  const painted = Boolean(colourValues.painted);
   const result = useMemo(() => {
     try {
       const fish = generate(seed, { ...baseParams, ...parameterOverrides(values) });
@@ -89,7 +95,8 @@ function FishEditor({ seed, presetId }: { seed: string; presetId: string }) {
       }
       const svg = serialize(fish.polylines, 'svg');
       return { plan: null, image: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, error: null };
-    } catch {
+    } catch (error) {
+      console.error(error);
       return { plan: null, image: '', error: 'Unable to draw this combination. Reset the parameters or try another seed.' };
     }
   }, [seed, baseParams, values, painted, baseGenes, colourValues]);
@@ -111,6 +118,7 @@ function App() {
     seed: { type: 'text', default: 'Biggus fishus' },
     inspiration: { type: 'select', options: fishInspirations.map(p => ({ value: p.id, label: p.label })), default: 'procedural' },
     applyInspiration: { type: 'action' },
+    painted: true,
     draw: { type: 'action' },
     random: { type: 'action' },
     randomiseTraits: { type: 'action', label: 'Randomise traits' },
@@ -131,7 +139,7 @@ function App() {
     },
   });
   return <>
-    <FishEditor key={specimen.revision} seed={specimen.seed} presetId={specimen.presetId} />
+    <FishEditor key={specimen.revision} seed={specimen.seed} presetId={specimen.presetId} painted={dial.values.painted} />
     <DialRoot productionEnabled versions="menu" />
   </>;
 }
