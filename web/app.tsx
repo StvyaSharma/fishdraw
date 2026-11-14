@@ -40,6 +40,9 @@ function Painting({ plan, seed }: { plan: PaintPlan; seed: string }) {
 }
 
 type View = 'watercolour' | 'engraved' | 'lines';
+const views: readonly View[] = ['watercolour', 'engraved', 'lines'];
+/** `?view=lines` (or `engraved`) opens the editor in that view. */
+const initialView: View = views.find(v => v === new URLSearchParams(location.search).get('view')) ?? 'watercolour';
 
 function FishEditor({ seed, presetId, view }: { seed: string; presetId: string; view: View }) {
   const painted = view === 'watercolour';
@@ -132,7 +135,7 @@ function App() {
       { value: 'watercolour', label: 'Watercolour · p5.brush' },
       { value: 'engraved', label: 'Engraved colour · plotter' },
       { value: 'lines', label: 'Line drawing' },
-    ], default: 'watercolour' },
+    ], default: initialView },
     draw: { type: 'action' },
     random: { type: 'action' },
     randomiseTraits: { type: 'action', label: 'Randomise traits' },
