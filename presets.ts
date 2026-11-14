@@ -1,4 +1,5 @@
 import { default_params, generate, parameters_for_seed, str_to_seed, type FishParams } from './fishdraw.ts';
+import { colorParameters } from './traits/color.ts';
 import { fishTraits } from './traits/index.ts';
 
 export interface FishPreset {
@@ -127,6 +128,7 @@ export function parameters_for_preset(seed: string, presetId = 'procedural'): Fi
   if (!preset) throw new Error(`Unknown fish inspiration: ${presetId}.`);
   const params: FishParams = {
     ...default_params(),
+    ...colorParameters(str_to_seed(seed + ':color')),
     has_moustache: 0, has_beard: 0, has_teeth: 0, jaw_open: 0.15,
     head_texture_amount: 25, dorsal_texture_type: 0, wing_length: 70,
     pelvic_length: 45, anal_length: 40, finlet_type: 0, pattern_type: 0,

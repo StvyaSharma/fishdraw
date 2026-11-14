@@ -17,7 +17,18 @@ Open the address printed in the terminal (by default `http://127.0.0.1:3000`). S
 
 ## Live editor
 
-Use the native DialKit panel to enter a seed and click Draw, or click Random. DialKit controls adjust its body, scales, pattern, fins, tail, eyes, jaw, teeth, and barbels. Reset restores that seed’s starting parameters. A new seed starts with its own parameters.
+Use the native DialKit panels to enter a seed and click Draw, or click Random. The controls are grouped by what they change:
+
+- **Specimen**: seed, inspiration, Draw, Random, and Randomise traits.
+- **Anatomy**: body, fins, fin layout, face, and barbels.
+- **Surface**: skin (scales), markings, and colour.
+- **Output**: Reset and the Export folder.
+
+Reset restores that seed’s starting parameters. A new seed starts with its own parameters.
+
+**Colour** is on by default in the editor. Each seed carries its own colour genes: a limited palette family, a pigment pattern, contrast, fin margins and an optional eye-bar. Colour is drawn as hatching, never as fills, so the output stays plotter-ready with one SVG path per pen. Countershading, a silvery side band and the pigment pattern are each cut out of dense hatching by smooth fields. The pigment pattern grows from a small two-cell simulation of how fish pigment cells interact, so spots, stripes, bars, mazes and networks emerge from a single parameter instead of being drawn as shapes. See [the coloration notes](docs/coloration.md).
+
+Set **Output → Renderer** to **Watercolour · p5.brush** to paint the same fish with [p5.brush](https://github.com/acamposuribe/p5.brush) (its standalone WebGL2 build, so p5.js isn't required). The colour fields become watercolour washes: countershading, the side sheen and fin tints are wash polygons, and the pigment pattern is traced into contours so every spot or stripe dries as its own wash with bleed, granulation and an edge ring. The engraved line work is then inked on top with a technical-pen brush. Choose **png** in Export to download the painting; the vector formats still export the ink layer.
 
 Choose an **Inspiration** and click **Apply Inspiration** (or Draw). There are eight researched starting points: bluefin tuna, foureye butterflyfish, reticulated moray, northern pike, Atlantic sturgeon, red lionfish, channel catfish, and Florida gar. These are artistic interpretations with simplified anatomy, not species identification drawings. Their sources and limitations are recorded in [the morphology research](docs/fish-morphology.md).
 
@@ -40,8 +51,11 @@ bun run generate --seed "Salmo salar" --format json > fish.json
 bun run generate --seed "River specimen" --preset sturgeon > sturgeon.svg
 bun run generate --seed "Reef specimen" --preset butterflyfish --texture smooth --pattern chevrons > reef.svg
 bun run generate --seed "Invented specimen" --preset explorer > invented.svg
+bun run generate --seed "Pomacanthus rex" --color > colour.svg
+bun run generate --seed "Reef specimen" --palette reef > reef-colour.svg
 bun cli.ts --list-presets
 bun cli.ts --list-traits
+bun cli.ts --list-palettes
 bun cli.ts --help
 ```
 
@@ -50,6 +64,8 @@ bun cli.ts --help
 - `--speed`: a positive multiplier for SMIL drawing speed; `2` draws twice as fast.
 - `--preset`: `procedural` (default), `explorer`, or a named inspiration ID from `--list-presets`.
 - `--shape`, `--texture`, `--pattern`, `--tail`: independent overrides using stable keys from `--list-traits`.
+- `--color`: draw in colour using the seed's colour genes. Output stays monochrome unless you pass this flag.
+- `--palette`: force a palette family from `--list-palettes`; this also turns colour on.
 
 Invalid arguments produce an error on stderr and a nonzero exit status.
 

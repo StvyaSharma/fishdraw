@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { cleanup, default_params, generate, main, parameters_for_seed, reframe, type Drawing } from '../fishdraw.ts';
 import { formats, serialize } from '../formats.ts';
 import { run } from '../cli.ts';
-import { controlConfig, parameterOverrides, type Controls } from '../web/controls.ts';
+import { anatomyConfig, parameterOverrides, surfaceConfig, type AnatomyControls, type SurfaceControls } from '../web/controls.ts';
 import fixtures from './original-output.json';
 
 function expectFinite(drawing: Drawing) {
@@ -57,20 +57,26 @@ test('all scale, pattern, tail, finlet, and fin texture variants produce finite 
   }
 });
 
-function edgeControls(edge: 1 | 2): Controls {
-  const c = controlConfig(default_params());
-  return {
-    body: { length: c.body.length[edge], height: c.body.height[edge], curve: c.body.curve[edge], shape: String(edge - 1) },
-    texture: { scales: String(edge === 1 ? 0 : 3), scaleSize: c.texture.scaleSize[edge], pattern: String(edge === 1 ? 0 : 4), patternSize: c.texture.patternSize[edge], ocellus: edge === 2, lateralLine: edge === 1 ? '0' : '2' },
-    fins: { dorsal: c.fins.dorsal[edge], pectoral: c.fins.pectoral[edge], pelvic: c.fins.pelvic[edge], anal: c.fins.anal[edge], tail: c.fins.tail[edge], tailShape: String(edge === 1 ? 0 : 5), arrangement: edge === 1 ? '0' : '5' },
-    anatomy: { _collapsed: true, dorsalFin: edge === 2, pectoralFin: edge === 2, pelvicFin: edge === 2, analFin: edge === 2, dorsalOrigin: c.anatomy.dorsalOrigin[edge], dorsalSpan: c.anatomy.dorsalSpan[edge], analOrigin: c.anatomy.analOrigin[edge], analSpan: c.anatomy.analSpan[edge], finRays: String(edge - 1) },
-    face: { eye: c.face.eye[edge], jaw: c.face.jaw[edge], mouthOpen: c.face.mouthOpen[edge], snoutLength: c.face.snoutLength[edge], snoutHeight: c.face.snoutHeight[edge], barbelsLength: c.face.barbelsLength[edge], chinBarbelsLength: c.face.chinBarbelsLength[edge], mouthPosition: edge === 1 ? '0' : '1', barbelsOrigin: edge === 1 ? '0' : '1', teeth: edge === 2, moustache: edge === 2, beard: edge === 2, _collapsed: true },
-  };
+function edgeControls(edge: 1 | 2): [AnatomyControls, SurfaceControls] {
+  const a = anatomyConfig(default_params());
+  const c = surfaceConfig(default_params());
+  const on = edge === 2;
+  return [{
+    body: { length: a.body.length[edge], height: a.body.height[edge], curve: a.body.curve[edge], shape: String(edge - 1) },
+    fins: { dorsal: a.fins.dorsal[edge], pectoral: a.fins.pectoral[edge], pelvic: a.fins.pelvic[edge], anal: a.fins.anal[edge], tail: a.fins.tail[edge], tailShape: String(on ? 5 : 0), arrangement: on ? '5' : '0', finRays: String(edge - 1) },
+    finLayout: { _collapsed: true, dorsalFin: on, pectoralFin: on, pelvicFin: on, analFin: on, dorsalOrigin: a.finLayout.dorsalOrigin[edge], dorsalSpan: a.finLayout.dorsalSpan[edge], analOrigin: a.finLayout.analOrigin[edge], analSpan: a.finLayout.analSpan[edge] },
+    face: { _collapsed: true, eye: a.face.eye[edge], snoutLength: a.face.snoutLength[edge], snoutHeight: a.face.snoutHeight[edge], jaw: a.face.jaw[edge], mouthOpen: a.face.mouthOpen[edge], mouthPosition: on ? '1' : '0', teeth: on },
+    barbels: { _collapsed: true, moustache: on, barbelsLength: a.barbels.barbelsLength[edge], beard: on, chinBarbelsLength: a.barbels.chinBarbelsLength[edge], barbelsOrigin: on ? '1' : '0' },
+  }, {
+    skin: { scales: String(on ? 3 : 0), scaleSize: c.skin.scaleSize[edge] },
+    markings: { pattern: String(on ? 4 : 0), patternSize: c.markings.patternSize[edge], ocellus: on, lateralLine: on ? '2' : '0' },
+    color: { inColor: on, palette: on ? '5' : '0', hueShift: c.color.hueShift[edge], pigment: on ? '5' : '0', pigmentSize: c.color.pigmentSize[edge], contrast: c.color.contrast[edge], finMargins: on, eyeBar: on },
+  }];
 }
 
 test('DialKit control mappings generate finite drawings at both range extremes', () => {
   for (const seed of ['A', 'B', 'C']) {
-    for (const edge of [1, 2] as const) expectFinite(generate(seed, parameterOverrides(edgeControls(edge))).polylines);
+    for (const edge of [1, 2] as const) expectFinite(generate(seed, parameterOverrides(...edgeControls(edge))).polylines);
   }
 });
 
