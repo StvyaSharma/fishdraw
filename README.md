@@ -13,7 +13,7 @@ bun install
 bun run dev
 ```
 
-Open the address printed in the terminal (by default `http://127.0.0.1:3000`). Set `PORT` or `HOST` to change the server address.
+Open the address printed in the terminal (by default `http://127.0.0.1:3000`). The editor is a [Vite](https://vite.dev/) app with [TanStack Router](https://tanstack.com/router): the specimen lives in the URL, so every fish is a shareable link such as `/?seed=Salmo+salar&inspiration=pike&view=engraved`. Set `PORT` to change the port.
 
 ## Live editor
 
@@ -103,7 +103,7 @@ bun run test:e2e
 bun run check
 ```
 
-`bun run build` creates a standalone static editor in `dist/`, suitable for static hosting. `bun run start` runs the Bun server in production mode using the source HTML entry point. DialKit is explicitly enabled in production because the controls are part of the editor.
+`bun run build` creates a standalone static editor in `dist/` with Vite, suitable for static hosting. `bun run start` builds it and serves `dist/` with a small Bun server that caches hashed assets and falls back to the page for shared links. Fish generation and colour planning run in a Web Worker, so dragging controls never blocks the page, and p5.brush loads only when a painting is first shown. DialKit is explicitly enabled in production because the controls are part of the editor.
 
 Colour tests cover gene ranges and independence, palettes, contour tracing, plan validity and determinism, every pigment pattern, effect isolation and extension, and the inspirations' colour hints. A browser test paints a fish, checks the repaint is identical, changes the palette, and exports PNG. Tests cover original-output regression fixtures, deterministic seeds, parameter variants and range extremes, finite coordinates, exports, and CLI validation. Browser tests cover desktop and mobile DialKit controls and downloads against the production Bun server.
 

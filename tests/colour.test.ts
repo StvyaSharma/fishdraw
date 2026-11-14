@@ -212,3 +212,17 @@ describe('engraved colour', () => {
     expect(run(['--seed', 'Reef specimen', '--preset', 'butterflyfish'])).not.toContain('stroke="#');
   });
 });
+
+describe('editor artwork', () => {
+  test('computes every view from plain data, reusing the fish across colour edits', async () => {
+    const { artwork } = await import('../web/artwork.ts');
+    const seed = 'Salmo salar', params = parameters_for_preset(seed, 'procedural'), genes = colourGenes(seed);
+    const painting = artwork({ seed, params, genes, view: 'watercolour' });
+    expect(painting.kind).toBe('painting');
+    const engraved = artwork({ seed, params, genes: { ...genes, 'palette.family': 3 }, view: 'engraved' });
+    expect(engraved.kind === 'svg' && new Set(engraved.colors).size).toBeGreaterThan(3);
+    const lines = artwork({ seed, params, genes, view: 'lines' });
+    expect(lines.kind === 'svg' && lines.colors).toBeUndefined();
+    expect(structuredClone(painting)).toEqual(painting);
+  });
+});
